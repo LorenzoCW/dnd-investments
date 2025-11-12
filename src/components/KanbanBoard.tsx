@@ -32,17 +32,18 @@ const defaultCols: Column[] = [
 export type ColumnId = (typeof defaultCols)[number]["id"] | string;
 
 const initialTasks: Task[] = [
-  { id: "card1", columnId: "investment3", content: 50, dateISO: new Date().toISOString() },
-  { id: "card2", columnId: "investment2", content: 60, dateISO: new Date().toISOString() },
-  { id: "card3", columnId: "investment1", content: 70, dateISO: new Date().toISOString() },
-  { id: "card4", columnId: "investment1", content: 80, dateISO: new Date().toISOString() },
+  { id: "card1", columnId: "investment3", content: 50, dateISO: new Date('2025-11-01T12:00:00Z').toISOString() },
+  { id: "card2", columnId: "investment2", content: 60, dateISO: new Date('2025-11-02T12:00:00Z').toISOString() },
+  { id: "card3", columnId: "investment1", content: 70, dateISO: new Date('2025-11-03T12:00:00Z').toISOString() },
+  { id: "card4", columnId: "investment1", content: 80, dateISO: new Date('2025-11-04T12:00:00Z').toISOString() },
 ];
 
 export function KanbanBoard() {
 
   const [columns, setColumns] = useState<Column[]>(defaultCols); // teste
   // const [columns, setColumns] = useState<Column[]>([]);
-  const [tasks, setTasks] = useState<Task[]>(initialTasks); // teste
+
+  const [tasks, setTasks] = useState<Task[]>(() => initialTasks); // teste
   // const [tasks, setTasks] = useState<Task[]>([]);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
@@ -57,6 +58,31 @@ export function KanbanBoard() {
       coordinateGetter: coordinateGetter,
     })
   );
+
+  function normalizeTasks(inputTasks: Task[], colsOrder: ColumnId[]) {
+    const byColumn: Task[] = [];
+    for (const colId of colsOrder) {
+      const tasksForCol = inputTasks
+        .filter((t) => t.columnId === colId)
+        .slice()
+        .sort((a, b) => {
+          const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+          const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+          return tb - ta;
+        });
+      byColumn.push(...tasksForCol);
+    }
+
+    // fallback
+    const remaining = inputTasks.filter((t) => !colsOrder.includes(t.columnId));
+    remaining.sort((a, b) => {
+      const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+      const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+      return tb - ta;
+    });
+    byColumn.push(...remaining);
+    return byColumn;
+  }
 
   function getDraggingTaskData(taskId: UniqueIdentifier, columnId: ColumnId) {
     const tasksInColumn = tasks.filter((task) => task.columnId === columnId);
@@ -120,7 +146,6 @@ export function KanbanBoard() {
     },
   };
 
-  // add / remove columns & tasks
   function addColumn(title: string) {
     const id = `col-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setColumns((cols) => [...cols, { id, title }]);
@@ -128,8 +153,7 @@ export function KanbanBoard() {
 
   function removeColumn(id: ColumnId) {
     setColumns((cols) => cols.filter((c) => c.id !== id));
-    // remove tasks belonging to that column
-    setTasks((ts) => ts.filter((t) => t.columnId !== id));
+    setTasks((ts) => normalizeTasks(ts.filter((t) => t.columnId !== id), columnsId));
   }
 
   function addTask(columnId: ColumnId, amount: number, dateISO?: string | null) {
@@ -138,11 +162,12 @@ export function KanbanBoard() {
       return;
     }
     const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setTasks((ts) => [...ts, { id, columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString() } as Task]);
+    const newTask: Task = { id, columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString() } as Task;
+    setTasks((ts) => normalizeTasks([...ts, newTask], columnsId));
   }
 
   function removeTask(taskId: string) {
-    setTasks((ts) => ts.filter((t) => t.id !== taskId));
+    setTasks((ts) => normalizeTasks(ts.filter((t) => t.id !== taskId), columnsId));
   }
 
   return (
@@ -160,16 +185,26 @@ export function KanbanBoard() {
 
       <BoardContainer>
         <SortableContext items={columnsId}>
-          {columns.map((col) => (
-            <BoardColumn
-              key={col.id}
-              column={col}
-              tasks={tasks.filter((task) => task.columnId === col.id)}
-              onAddTask={(amount, dateISO) => addTask(col.id, amount, dateISO)}
-              onRemoveTask={(taskId) => removeTask(taskId)}
-              onRemoveColumn={() => removeColumn(col.id)}
-            />
-          ))}
+          {columns.map((col) => {
+            const tasksForCol = tasks
+              .filter((task) => task.columnId === col.id)
+              .slice()
+              .sort((a, b) => {
+                const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+                const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+                return tb - ta;
+              });
+            return (
+              <BoardColumn
+                key={col.id}
+                column={col}
+                tasks={tasksForCol}
+                onAddTask={(amount, dateISO) => addTask(col.id, amount, dateISO)}
+                onRemoveTask={(taskId) => removeTask(taskId)}
+                onRemoveColumn={() => removeColumn(col.id)}
+              />
+            );
+          })}
         </SortableContext>
       </BoardContainer>
 
@@ -261,12 +296,15 @@ export function KanbanBoard() {
         const overIndex = tasks.findIndex((t) => t.id === overId);
         const activeTask = tasks[activeIndex];
         const overTask = tasks[overIndex];
+        let newTasks = tasks.slice();
         if (activeTask && overTask && activeTask.columnId !== overTask.columnId) {
-          activeTask.columnId = overTask.columnId;
-          return arrayMove(tasks, activeIndex, overIndex - 1);
+          const updatedActive = { ...activeTask, columnId: overTask.columnId };
+          newTasks[activeIndex] = updatedActive;
+          newTasks = arrayMove(newTasks, activeIndex, overIndex - 1);
+        } else {
+          newTasks = arrayMove(newTasks, activeIndex, overIndex);
         }
-
-        return arrayMove(tasks, activeIndex, overIndex);
+        return normalizeTasks(newTasks, columnsId);
       });
     }
 
@@ -278,8 +316,9 @@ export function KanbanBoard() {
         const activeIndex = tasks.findIndex((t) => t.id === activeId);
         const activeTask = tasks[activeIndex];
         if (activeTask) {
-          activeTask.columnId = overId as ColumnId;
-          return arrayMove(tasks, activeIndex, activeIndex);
+          const updated = tasks.slice();
+          updated[activeIndex] = { ...activeTask, columnId: overId as ColumnId };
+          return normalizeTasks(updated, columnsId);
         }
         return tasks;
       });
@@ -287,7 +326,6 @@ export function KanbanBoard() {
   }
 }
 
-// AddColumnForm
 function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
   const [value, setValue] = useState("");
   return (

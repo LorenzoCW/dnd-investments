@@ -1,3 +1,5 @@
+// TaskCard.tsx
+
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -5,7 +7,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cva } from "class-variance-authority";
 import { GripVertical } from "lucide-react";
-import { Badge } from "./ui/badge";
 import { ColumnId } from "./KanbanBoard";
 
 export interface Task {
@@ -60,6 +61,10 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     },
   });
 
+  const formattedDate = task.dateISO
+    ? new Date(task.dateISO).toLocaleDateString()
+    : "--";
+
   return (
     <Card
       ref={setNodeRef}
@@ -69,22 +74,34 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
       })}
     >
       <CardHeader className="px-3 py-3 space-between flex flex-row border-b-2 border-secondary relative">
-        <Button
-          variant={"ghost"}
-          {...attributes}
-          {...listeners}
-          className="p-1 text-secondary-foreground/50 -ml-2 h-auto cursor-grab"
-        >
-          <span className="sr-only">Move task</span>
-          <GripVertical />
-        </Button>
-        <Badge variant={"outline"} className="ml-auto font-semibold">
-          Task
-        </Badge>
+
+        <div className="flex">
+
+          <Button
+            variant={"ghost"}
+            {...attributes}
+            {...listeners}
+            className="p-1 text-secondary-foreground/50 h-auto -ml-2 cursor-grab"
+          >
+            <span className="sr-only">Move task</span>
+            <GripVertical />
+          </Button>
+
+          <div className="text-xl">{task.content}</div>
+
+        </div>
+
+        {/* <Badge variant={"outline"} className="ml-auto font-semibold">
+          Investimento
+        </Badge> */}
+
       </CardHeader>
+
       <CardContent className="px-3 pt-3 pb-6 text-left whitespace-pre-wrap">
-        {task.content}
+        <p className="text-gray-400">{formattedDate}</p>
+        {/* TODO: add buttons */}
       </CardContent>
+
     </Card>
   );
 }
