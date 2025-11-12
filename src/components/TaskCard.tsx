@@ -11,7 +11,8 @@ import { ColumnId } from "./KanbanBoard";
 export interface Task {
   id: UniqueIdentifier;
   columnId: ColumnId;
-  content: string;
+  content: number;
+  dateISO?: string;
 }
 
 interface TaskCardProps {
