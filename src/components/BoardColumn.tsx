@@ -27,11 +27,18 @@ interface BoardColumnProps {
   column: Column;
   tasks: Task[];
   isOverlay?: boolean;
+  allColumns?: Column[];
   onAddTask?: (amount: number, dateISO?: string | null) => void;
   onRemoveTask?: (taskId: string) => void;
   onRemoveColumn?: () => void;
-  onTransferTask?: (taskId: UniqueIdentifier, amount: number, targetColumnId: UniqueIdentifier, dateISO?: string | null) => void;
+  onTransferTask?: (
+    taskId: UniqueIdentifier,
+    amount: number,
+    targetColumnId: UniqueIdentifier,
+    dateISO?: string | null
+  ) => void;
 }
+
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -213,6 +220,7 @@ export function BoardColumn({
   column,
   tasks,
   isOverlay,
+  allColumns,
   onAddTask,
   onRemoveTask,
   onRemoveColumn,
@@ -222,6 +230,7 @@ export function BoardColumn({
   const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
   const [isDeleteListOpen, setIsDeleteListOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -233,6 +242,51 @@ export function BoardColumn({
       roleDescription: `Column: ${column.title}`,
     },
   });
+
+  const [transferState, setTransferState] = useState<TransferState>({
+    open: false,
+    task: null,
+    amount: 0,
+    targetColumnId: column.id,
+    dateTimeLocal: toLocalDateTimeInputValue(),
+  });
+
+  const handleOpenDeleteCardModal = (task: Task) => {
+    setTaskToDelete(task);
+    setIsDeleteCardOpen(true);
+  };
+
+  const handleOpenDeleteColumnModal = () => {
+    setIsDeleteListOpen(true);
+  };
+
+  const handleConfirmDeleteCard = () => {
+    if (taskToDelete && onRemoveTask) {
+      onRemoveTask(taskToDelete.id.toString());
+    }
+    setTaskToDelete(null);
+    setIsDeleteCardOpen(false);
+  };
+
+  const handleConfirmDeleteColumn = () => {
+    if (onRemoveColumn) {
+      onRemoveColumn();
+    }
+    setIsDeleteListOpen(false);
+  };
+
+  const totalAmount = useMemo(() => {
+    return tasks.reduce((sum, t) => sum + (typeof t.content === "number" ? t.content : Number(t.content) || 0), 0);
+  }, [tasks]);
+
+  const formattedTotal = useMemo(() => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(totalAmount);
+  }, [totalAmount]);
 
   const style = { transition, transform: CSS.Translate.toString(transform) };
 
@@ -249,8 +303,6 @@ export function BoardColumn({
     }
   );
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
   const actionButtonsStyle = "text-sm p-1.5 rounded-md transform duration-200";
 
   type TransferState = {
@@ -259,41 +311,6 @@ export function BoardColumn({
     amount: number;
     targetColumnId?: UniqueIdentifier | null;
     dateTimeLocal?: string;
-  };
-
-  const [transferState, setTransferState] = useState<TransferState>({
-    open: false,
-    task: null,
-    amount: 0,
-    targetColumnId: column.id,
-    dateTimeLocal: toLocalDateTimeInputValue(),
-  });
-
-  const handleOpenDeleteCardModal = (task: Task) => {
-    setTaskToDelete(task);
-    setIsDeleteCardOpen(true);
-  };
-
-  // Função para abrir o modal de confirmação de exclusão para lista
-  const handleOpenDeleteColumnModal = () => {
-    setIsDeleteListOpen(true);
-  };
-
-  // Confirmar exclusão do card
-  const handleConfirmDeleteCard = () => {
-    if (taskToDelete && onRemoveTask) {
-      onRemoveTask(taskToDelete.id.toString());
-    }
-    setTaskToDelete(null);
-    setIsDeleteCardOpen(false);
-  };
-
-  // Confirmar exclusão da lista
-  const handleConfirmDeleteColumn = () => {
-    if (onRemoveColumn) {
-      onRemoveColumn();
-    }
-    setIsDeleteListOpen(false);
   };
 
   return (
@@ -314,7 +331,11 @@ export function BoardColumn({
             <GripVertical />
           </Button>
 
-          <span className="ml-2 text-left">{column.title}</span>
+          <div className="ml-2 text-left">
+            <div>{column.title}</div>
+            <div className="text-sm font-medium text-gray-500">{formattedTotal}</div>
+          </div>
+
         </div>
 
         {onRemoveColumn && (
@@ -345,9 +366,7 @@ export function BoardColumn({
                           task,
                           amount: Math.floor(task.content),
                           targetColumnId: column.id as UniqueIdentifier,
-                          dateTimeLocal: toLocalDateTimeInputValue(
-                            task.dateISO ? new Date(task.dateISO) : new Date()
-                          ),
+                          dateTimeLocal: toLocalDateTimeInputValue(new Date()),
                         });
                       }}
                     >
@@ -420,35 +439,56 @@ export function BoardColumn({
                 <label className="block text-sm">Cartão</label>
                 <div className="py-2 text-sm">{`${transferState.task.content.toFixed(
                   2
-                )} — lista: ${column.title}`}</div>
+                )} — lista atual: ${column.title}`}</div>
               </div>
 
               <div>
-                <label className="block text-sm">Valor a transferir (inteiro)</label>
+                <label className="block text-sm">Lista de destino</label>
+                <select
+                  value={transferState.targetColumnId ?? column.id}
+                  onChange={(e) =>
+                    setTransferState((s) => ({
+                      ...s,
+                      targetColumnId: e.target.value,
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded border bg-white dark:bg-slate-800"
+                >
+                  {allColumns?.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm">Valor a transferir</label>
                 <input
                   type="number"
-                  min={1}
-                  step={1}
+                  min={0.01}
+                  step={0.01}
                   value={transferState.amount}
                   onChange={(e) =>
                     setTransferState((s) => ({
                       ...s,
-                      amount: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                      amount: Math.max(0, Number(e.target.value) || 0),
                     }))
                   }
                   className="w-full px-3 py-2 rounded border"
                 />
                 <input
                   type="range"
-                  min={1}
-                  max={Math.max(1, Math.floor(transferState.task.content))}
+                  min={0}
+                  max={transferState.task.content}
+                  step={1}
                   value={transferState.amount}
                   onChange={(e) =>
                     setTransferState((s) => ({
                       ...s,
-                      amount: Math.max(
-                        1,
-                        Math.min(Math.floor(transferState.task!.content), Number(e.target.value))
+                      amount: Math.min(
+                        transferState.task!.content,
+                        Number(e.target.value)
                       ),
                     }))
                   }
@@ -493,7 +533,7 @@ export function BoardColumn({
                     const amt = transferState.amount;
                     if (!transferState.task) return;
                     if (!Number.isFinite(amt) || amt <= 0) {
-                      alert("Informe um valor inteiro maior que zero");
+                      alert("Informe um valor maior que zero");
                       return;
                     }
                     if (amt > transferState.task.content) {

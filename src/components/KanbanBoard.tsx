@@ -242,6 +242,7 @@ export function KanbanBoard() {
                 key={col.id}
                 column={col}
                 tasks={tasksForCol}
+                allColumns={columns}
                 onAddTask={(amount, dateISO) => addTask(col.id, amount, dateISO)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
                 onRemoveColumn={() => removeColumn(col.id)}
