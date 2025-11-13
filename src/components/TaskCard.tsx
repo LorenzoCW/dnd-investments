@@ -1,5 +1,3 @@
-// TaskCard.tsx
-
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -65,6 +63,13 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     ? new Date(task.dateISO).toLocaleDateString()
     : "--";
 
+  const formattedAmount = new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(task.content);
+
   return (
     <Card
       ref={setNodeRef}
@@ -87,7 +92,7 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
             <GripVertical />
           </Button>
 
-          <div className="text-xl">R$ {task.content}</div>
+          <div className="text-xl">{formattedAmount}</div>
 
         </div>
 

@@ -1,5 +1,3 @@
-// BoardColumn.tsx
-
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { useDndContext, type UniqueIdentifier } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -56,17 +54,75 @@ function toLocalDateTimeInputValue(d = new Date()) {
   return local.toISOString().slice(0, 19);
 }
 
+function parseCurrencyInput(input: string): number {
+  const s = String(input).trim();
+  if (s.length === 0) throw new Error("Entrada vazia");
+
+  const hasComma = s.indexOf(",") !== -1;
+  const hasDot = s.indexOf(".") !== -1;
+
+  let normalized = s;
+
+  if (hasComma && hasDot) {
+    // Ambiguous: decide decimal separator by which appears last
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      // comma is decimal separator: remove dots (thousands), replace comma -> dot
+      normalized = s.replace(/\./g, "").replace(/,/g, ".");
+    } else {
+      // dot is decimal separator: remove commas (thousands)
+      normalized = s.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    // only comma -> decimal separator
+    normalized = s.replace(/,/g, ".");
+  } else {
+    normalized = s;
+  }
+
+  // At this point normalized should be digits and at most one dot
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
+    throw new Error("Formato numérico inválido");
+  }
+
+  const parts = normalized.split(".");
+  if (parts.length > 2) throw new Error("Formato numérico inválido");
+
+  const integerPart = parts[0];
+  const decimalPart = parts[1] ?? "";
+
+  if (decimalPart.length > 2) {
+    throw new Error("Apenas até 2 casas decimais");
+  }
+
+  // build a string with exactly two decimals
+  let finalStr: string;
+  if (decimalPart.length === 0) {
+    finalStr = `${integerPart}.00`;
+  } else if (decimalPart.length === 1) {
+    finalStr = `${integerPart}.${decimalPart}0`;
+  } else {
+    finalStr = `${integerPart}.${decimalPart}`;
+  }
+
+  // Convert to number safely and round to 2 decimals
+  const n = Math.round(Number(finalStr) * 100) / 100;
+  if (Number.isNaN(n)) throw new Error("Número inválido");
+  return n;
+}
+
 function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount: number, dateISO?: string | null) => void }) {
   const [amountText, setAmountText] = useState("");
   const [dateTimeLocal, setDateTimeLocal] = useState<string>(toLocalDateTimeInputValue());
   const amountInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = () => {
-    const normalized = amountText.replace(/[.,\s]+/g, (m) => (m.includes(",") && !m.includes(".") ? "." : ""));
-    const amt = Number(normalized);
-    if (isNaN(amt) || amt <= 0) return alert("Informe um valor maior que zero");
-    const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : undefined;
-    onAdd(amt, dateISO ?? undefined);
+    try {
+      const amt = parseCurrencyInput(amountText);
+      const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : undefined;
+      onAdd(amt, dateISO ?? undefined);
+    } catch (err: any) {
+      alert(err?.message ?? "Valor inválido");
+    }
   };
 
   useEffect(() => {
@@ -107,7 +163,7 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
             ref={amountInputRef}
             value={amountText}
             onChange={(e) => setAmountText(e.target.value)}
-            placeholder="Ex: 500 ou 500,00"
+            placeholder="Ex: 500 ou 500,00 ou 1.234,56"
             className="w-full px-3 py-2 rounded border"
           />
         </div>
