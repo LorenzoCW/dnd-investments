@@ -170,6 +170,49 @@ export function KanbanBoard() {
     setTasks((ts) => normalizeTasks(ts.filter((t) => t.id !== taskId), columnsId));
   }
 
+  function transferTask(taskId: UniqueIdentifier, amount: number, targetColumnId: ColumnId, dateISO?: string | null) {
+    if (isNaN(amount) || amount <= 0) {
+      alert("Informe um valor maior que zero para transferir");
+      return;
+    }
+
+    setTasks((ts) => {
+      const idx = ts.findIndex((t) => t.id === taskId);
+      if (idx === -1) return ts;
+
+      const source = ts[idx];
+      // arredondar para 2 casas (se quiser inteiros, troque a lógica)
+      const transferAmount = Math.round(amount * 100) / 100;
+      if (transferAmount > source.content) {
+        alert("Valor de transferência maior que o disponível no cartão");
+        return ts;
+      }
+
+      const updated = ts.slice();
+
+      // diminuir do cartão original; se chegar a 0 => remover
+      const remaining = Math.round((source.content - transferAmount) * 100) / 100;
+      if (remaining <= 0) {
+        updated.splice(idx, 1);
+      } else {
+        updated[idx] = { ...source, content: remaining };
+      }
+
+      // criar novo cartão com o valor transferido para a coluna destino
+      const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newTask: Task = {
+        id: newId,
+        columnId: targetColumnId as string,
+        content: transferAmount,
+        dateISO: dateISO ?? new Date().toISOString(),
+      };
+
+      updated.push(newTask);
+
+      return normalizeTasks(updated, columnsId);
+    });
+  }
+
   return (
     <DndContext
       accessibility={{ announcements }}
@@ -202,6 +245,9 @@ export function KanbanBoard() {
                 onAddTask={(amount, dateISO) => addTask(col.id, amount, dateISO)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
                 onRemoveColumn={() => removeColumn(col.id)}
+                onTransferTask={(taskId, amount, targetColumnId, dateISO) =>
+                  transferTask(taskId, amount, targetColumnId, dateISO)
+                }
               />
             );
           })}

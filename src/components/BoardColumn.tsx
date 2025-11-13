@@ -6,7 +6,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { GripVertical, Plus, X } from "lucide-react";
+import { ArrowLeftRight, GripVertical, Plus, X } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -28,6 +28,7 @@ interface BoardColumnProps {
   onAddTask?: (amount: number, dateISO?: string | null) => void;
   onRemoveTask?: (taskId: string) => void;
   onRemoveColumn?: () => void;
+  onTransferTask?: (taskId: UniqueIdentifier, amount: number, targetColumnId: UniqueIdentifier, dateISO?: string | null) => void;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -64,12 +65,9 @@ function parseCurrencyInput(input: string): number {
   let normalized = s;
 
   if (hasComma && hasDot) {
-    // Ambiguous: decide decimal separator by which appears last
     if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
-      // comma is decimal separator: remove dots (thousands), replace comma -> dot
       normalized = s.replace(/\./g, "").replace(/,/g, ".");
     } else {
-      // dot is decimal separator: remove commas (thousands)
       normalized = s.replace(/,/g, "");
     }
   } else if (hasComma) {
@@ -79,7 +77,6 @@ function parseCurrencyInput(input: string): number {
     normalized = s;
   }
 
-  // At this point normalized should be digits and at most one dot
   if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
     throw new Error("Formato numérico inválido");
   }
@@ -94,7 +91,6 @@ function parseCurrencyInput(input: string): number {
     throw new Error("Apenas até 2 casas decimais");
   }
 
-  // build a string with exactly two decimals
   let finalStr: string;
   if (decimalPart.length === 0) {
     finalStr = `${integerPart}.00`;
@@ -104,7 +100,6 @@ function parseCurrencyInput(input: string): number {
     finalStr = `${integerPart}.${decimalPart}`;
   }
 
-  // Convert to number safely and round to 2 decimals
   const n = Math.round(Number(finalStr) * 100) / 100;
   if (Number.isNaN(n)) throw new Error("Número inválido");
   return n;
@@ -128,20 +123,6 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   useEffect(() => {
     amountInputRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAdd();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [amountText, dateTimeLocal]);
 
   return (
     <div
@@ -190,7 +171,15 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   );
 }
 
-export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask, onRemoveColumn }: BoardColumnProps) {
+export function BoardColumn({
+  column,
+  tasks,
+  isOverlay,
+  onAddTask,
+  onRemoveTask,
+  onRemoveColumn,
+  onTransferTask,
+}: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
@@ -223,10 +212,35 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
 
   const actionButtonsStyle = "text-sm bg-rose-500/75 hover:bg-rose-600 -translate-x-1 p-1 rounded-md transform duration-200";
 
+  type TransferState = {
+    open: boolean;
+    task?: Task | null;
+    amount: number;
+    targetColumnId?: UniqueIdentifier | null;
+    dateTimeLocal?: string;
+  };
+
+  const [transferState, setTransferState] = useState<TransferState>({
+    open: false,
+    task: null,
+    amount: 0,
+    targetColumnId: column.id,
+    dateTimeLocal: toLocalDateTimeInputValue(),
+  });
+
   return (
-    <Card ref={setNodeRef} style={style} className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}>
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
+    >
       <CardHeader className="p-4 font-semibold border-b-2 text-left flex flex-row space-between items-center">
-        <Button variant={"ghost"} {...attributes} {...listeners} className="p-1 text-primary/50 -ml-2 h-auto cursor-grab relative">
+        <Button
+          variant={"ghost"}
+          {...attributes}
+          {...listeners}
+          className="p-1 text-primary/50 -ml-2 h-auto cursor-grab relative"
+        >
           <span className="sr-only">{`Move column: ${column.title}`}</span>
           <GripVertical />
         </Button>
@@ -242,13 +256,32 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
 
       <ScrollArea>
         <CardContent className="flex flex-grow flex-col gap-2 p-2">
-
           <SortableContext items={tasksIds}>
             {tasks.map((task) => (
               <div key={task.id} className="relative group">
                 <TaskCard task={task} />
-
-                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  
+                  {onTransferTask && (
+                    <button
+                      title="Transferir"
+                      className="text-sm bg-blue-500/75 hover:bg-blue-600 -translate-x-1 p-1 rounded-md transform duration-200"
+                      onClick={() => {
+                        setTransferState({
+                          open: true,
+                          task,
+                          amount: Math.floor(task.content),
+                          targetColumnId: column.id as UniqueIdentifier,
+                          dateTimeLocal: toLocalDateTimeInputValue(
+                            task.dateISO ? new Date(task.dateISO) : new Date()
+                          ),
+                        });
+                      }}
+                    >
+                      <ArrowLeftRight size={14} />
+                    </button>
+                  )}
+                  
                   {onRemoveTask && (
                     <button
                       className={actionButtonsStyle}
@@ -258,15 +291,20 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
                       <X size={14} />
                     </button>
                   )}
-                </div>
 
+                </div>
               </div>
             ))}
           </SortableContext>
 
           {onAddTask && (
             <div className="mt-auto flex gap-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setIsModalOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => setIsModalOpen(true)}
+              >
                 <div className="flex items-center gap-2 justify-center">
                   <Plus size={16} /> <span>Adicionar cartão</span>
                 </div>
@@ -285,6 +323,136 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
               setIsModalOpen(false);
             }}
           />
+        </Modal>
+      )}
+
+      {/* Modal de transferência */}
+      {transferState.open && transferState.task && onTransferTask && (
+        <Modal
+          onClose={() =>
+            setTransferState({
+              open: false,
+              task: null,
+              amount: 0,
+              targetColumnId: column.id,
+              dateTimeLocal: toLocalDateTimeInputValue(),
+            })
+          }
+        >
+          <div>
+            <h3 className="text-xl font-semibold mb-3">Transferir valor</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm">Cartão</label>
+                <div className="py-2 text-sm">{`${transferState.task.content.toFixed(
+                  2
+                )} — lista: ${column.title}`}</div>
+              </div>
+
+              <div>
+                <label className="block text-sm">Valor a transferir (inteiro)</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={transferState.amount}
+                  onChange={(e) =>
+                    setTransferState((s) => ({
+                      ...s,
+                      amount: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                    }))
+                  }
+                  className="w-full px-3 py-2 rounded border"
+                />
+                <input
+                  type="range"
+                  min={1}
+                  max={Math.max(1, Math.floor(transferState.task.content))}
+                  value={transferState.amount}
+                  onChange={(e) =>
+                    setTransferState((s) => ({
+                      ...s,
+                      amount: Math.max(
+                        1,
+                        Math.min(Math.floor(transferState.task!.content), Number(e.target.value))
+                      ),
+                    }))
+                  }
+                  className="w-full mt-2"
+                />
+                <div className="text-xs mt-1">
+                  Disponível: {transferState.task.content.toFixed(2)}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm">Data e hora</label>
+                <input
+                  type="datetime-local"
+                  step={1}
+                  value={transferState.dateTimeLocal}
+                  onChange={(e) =>
+                    setTransferState((s) => ({ ...s, dateTimeLocal: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 rounded border"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() =>
+                    setTransferState({
+                      open: false,
+                      task: null,
+                      amount: 0,
+                      targetColumnId: column.id,
+                      dateTimeLocal: toLocalDateTimeInputValue(),
+                    })
+                  }
+                  className="px-3 py-2 rounded border cursor-pointer"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  onClick={() => {
+                    const amt = transferState.amount;
+                    if (!transferState.task) return;
+                    if (!Number.isFinite(amt) || amt <= 0) {
+                      alert("Informe um valor inteiro maior que zero");
+                      return;
+                    }
+                    if (amt > transferState.task.content) {
+                      alert("Valor maior do que o disponível no cartão");
+                      return;
+                    }
+                    const targetId = transferState.targetColumnId ?? column.id;
+                    const dateISO = transferState.dateTimeLocal
+                      ? new Date(transferState.dateTimeLocal).toISOString()
+                      : undefined;
+
+                    onTransferTask(
+                      transferState.task.id,
+                      amt,
+                      targetId,
+                      dateISO ?? undefined
+                    );
+
+                    setTransferState({
+                      open: false,
+                      task: null,
+                      amount: 0,
+                      targetColumnId: column.id,
+                      dateTimeLocal: toLocalDateTimeInputValue(),
+                    });
+                  }}
+                  className="px-3 py-2 rounded bg-blue-600 text-white cursor-pointer"
+                >
+                  Transferir
+                </button>
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
     </Card>
