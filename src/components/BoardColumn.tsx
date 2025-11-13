@@ -1,3 +1,5 @@
+// BoardColumn.tsx
+
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { useDndContext, type UniqueIdentifier } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -65,9 +67,12 @@ function parseCurrencyInput(input: string): number {
   let normalized = s;
 
   if (hasComma && hasDot) {
+    // Ambiguous: decide decimal separator by which appears last
     if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      // comma is decimal separator: remove dots (thousands), replace comma -> dot
       normalized = s.replace(/\./g, "").replace(/,/g, ".");
     } else {
+      // dot is decimal separator: remove commas (thousands)
       normalized = s.replace(/,/g, "");
     }
   } else if (hasComma) {
@@ -91,6 +96,7 @@ function parseCurrencyInput(input: string): number {
     throw new Error("Apenas até 2 casas decimais");
   }
 
+  // build a string with exactly two decimals
   let finalStr: string;
   if (decimalPart.length === 0) {
     finalStr = `${integerPart}.00`;
@@ -100,6 +106,7 @@ function parseCurrencyInput(input: string): number {
     finalStr = `${integerPart}.${decimalPart}`;
   }
 
+  // Convert to number safely and round to 2 decimals
   const n = Math.round(Number(finalStr) * 100) / 100;
   if (Number.isNaN(n)) throw new Error("Número inválido");
   return n;
@@ -171,6 +178,37 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   );
 }
 
+// Modal de Confirmação de Exclusão
+function ConfirmationModal({
+  message,
+  onConfirm,
+  onCancel,
+}: {
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal onClose={onCancel}>
+      <div>
+        <h3 className="text-xl font-semibold mb-3">Confirmar exclusão</h3>
+        <p>{message}</p>
+        <div className="flex gap-2 justify-end mt-4">
+          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-2 rounded bg-rose-600 text-white cursor-pointer"
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function BoardColumn({
   column,
   tasks,
@@ -181,6 +219,9 @@ export function BoardColumn({
   onTransferTask,
 }: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
+  const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
+  const [isDeleteListOpen, setIsDeleteListOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -210,7 +251,7 @@ export function BoardColumn({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const actionButtonsStyle = "text-sm bg-rose-500/75 hover:bg-rose-600 -translate-x-1 p-1 rounded-md transform duration-200";
+  const actionButtonsStyle = "text-sm p-1.5 rounded-md transform duration-200";
 
   type TransferState = {
     open: boolean;
@@ -228,30 +269,60 @@ export function BoardColumn({
     dateTimeLocal: toLocalDateTimeInputValue(),
   });
 
+  const handleOpenDeleteCardModal = (task: Task) => {
+    setTaskToDelete(task);
+    setIsDeleteCardOpen(true);
+  };
+
+  // Função para abrir o modal de confirmação de exclusão para lista
+  const handleOpenDeleteColumnModal = () => {
+    setIsDeleteListOpen(true);
+  };
+
+  // Confirmar exclusão do card
+  const handleConfirmDeleteCard = () => {
+    if (taskToDelete && onRemoveTask) {
+      onRemoveTask(taskToDelete.id.toString());
+    }
+    setTaskToDelete(null);
+    setIsDeleteCardOpen(false);
+  };
+
+  // Confirmar exclusão da lista
+  const handleConfirmDeleteColumn = () => {
+    if (onRemoveColumn) {
+      onRemoveColumn();
+    }
+    setIsDeleteListOpen(false);
+  };
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
       className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
     >
-      <CardHeader className="p-4 font-semibold border-b-2 text-left flex flex-row space-between items-center">
-        <Button
-          variant={"ghost"}
-          {...attributes}
-          {...listeners}
-          className="p-1 text-primary/50 -ml-2 h-auto cursor-grab relative"
-        >
-          <span className="sr-only">{`Move column: ${column.title}`}</span>
-          <GripVertical />
-        </Button>
+      <CardHeader className="p-4 font-semibold border-b-2 flex flex-row justify-between">
 
-        <span className="ml-auto">{column.title}</span>
+        <div className="flex items-center">
+          <Button
+            variant={"ghost"}
+            {...attributes}
+            {...listeners}
+            className="p-1 text-primary/50 -ml-2 h-auto cursor-grab relative"
+          >
+            <GripVertical />
+          </Button>
+
+          <span className="ml-2 text-left">{column.title}</span>
+        </div>
 
         {onRemoveColumn && (
-          <Button variant="ghost" onClick={() => onRemoveColumn()} className="ml-2" title="Remover lista">
+          <Button variant="ghost" onClick={handleOpenDeleteColumnModal} title="Remover lista">
             <X size={16} />
           </Button>
         )}
+
       </CardHeader>
 
       <ScrollArea>
@@ -259,13 +330,15 @@ export function BoardColumn({
           <SortableContext items={tasksIds}>
             {tasks.map((task) => (
               <div key={task.id} className="relative group">
+
                 <TaskCard task={task} />
+
                 <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  
+
                   {onTransferTask && (
                     <button
-                      title="Transferir"
-                      className="text-sm bg-blue-500/75 hover:bg-blue-600 -translate-x-1 p-1 rounded-md transform duration-200"
+                      title="Transferir valor"
+                      className={`${actionButtonsStyle} bg-blue-500/75 hover:bg-blue-600`}
                       onClick={() => {
                         setTransferState({
                           open: true,
@@ -281,11 +354,12 @@ export function BoardColumn({
                       <ArrowLeftRight size={14} />
                     </button>
                   )}
-                  
+
                   {onRemoveTask && (
                     <button
-                      className={actionButtonsStyle}
-                      onClick={() => onRemoveTask(task.id.toString())}
+                      title="Remover cartão"
+                      className={`${actionButtonsStyle} bg-rose-500/75 hover:bg-rose-600`}
+                      onClick={() => handleOpenDeleteCardModal(task)}
                       aria-label={`Remover cartão ${task.content}`}
                     >
                       <X size={14} />
@@ -454,6 +528,24 @@ export function BoardColumn({
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Modal de confirmação de exclusão de card */}
+      {isDeleteCardOpen && taskToDelete && (
+        <ConfirmationModal
+          message={`Excluir o cartão "${taskToDelete.content}"?`}
+          onConfirm={handleConfirmDeleteCard}
+          onCancel={() => setIsDeleteCardOpen(false)}
+        />
+      )}
+
+      {/* Modal de confirmação de exclusão de coluna (lista) */}
+      {isDeleteListOpen && (
+        <ConfirmationModal
+          message={`Excluir a lista "${column.title}"? Isso removerá todos os cartões nela.`}
+          onConfirm={handleConfirmDeleteColumn}
+          onCancel={() => setIsDeleteListOpen(false)}
+        />
       )}
     </Card>
   );

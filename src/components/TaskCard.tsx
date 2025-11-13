@@ -1,3 +1,5 @@
+// TaskCard.tsx
+
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -78,7 +80,7 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
         dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined,
       })}
     >
-      <CardHeader className="px-3 py-3 space-between flex flex-row border-b-2 border-secondary relative">
+      <CardHeader className="px-3 py-3 border-b-2 border-secondary relative">
 
         <div className="flex">
 
@@ -104,7 +106,6 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
 
       <CardContent className="px-3 pt-3 pb-6 text-left whitespace-pre-wrap">
         <p className="text-gray-400">{formattedDate}</p>
-        {/* TODO: add buttons */}
       </CardContent>
 
     </Card>
