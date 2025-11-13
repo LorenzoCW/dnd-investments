@@ -87,7 +87,7 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
             <GripVertical />
           </Button>
 
-          <div className="text-xl">{task.content}</div>
+          <div className="text-xl">R$ {task.content}</div>
 
         </div>
 

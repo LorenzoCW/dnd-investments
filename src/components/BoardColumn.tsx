@@ -53,7 +53,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
 function toLocalDateTimeInputValue(d = new Date()) {
   const tzOffset = d.getTimezoneOffset();
   const local = new Date(d.getTime() - tzOffset * 60000);
-  return local.toISOString().slice(0, 19); // YYYY-MM-DDTHH:MM:SS
+  return local.toISOString().slice(0, 19);
 }
 
 function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount: number, dateISO?: string | null) => void }) {
@@ -62,7 +62,6 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   const amountInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = () => {
-    // tentativa simples de interpretar formatos: se usuário digitar 500, 500.00, 500,00
     const normalized = amountText.replace(/[.,\s]+/g, (m) => (m.includes(",") && !m.includes(".") ? "." : ""));
     const amt = Number(normalized);
     if (isNaN(amt) || amt <= 0) return alert("Informe um valor maior que zero");
@@ -166,6 +165,8 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
 
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  const actionButtonsStyle = "text-sm bg-rose-500/75 hover:bg-rose-600 -translate-x-1 p-1 rounded-md transform duration-200";
+
   return (
     <Card ref={setNodeRef} style={style} className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}>
       <CardHeader className="p-4 font-semibold border-b-2 text-left flex flex-row space-between items-center">
@@ -176,7 +177,6 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
 
         <span className="ml-auto">{column.title}</span>
 
-        {/* delete column button */}
         {onRemoveColumn && (
           <Button variant="ghost" onClick={() => onRemoveColumn()} className="ml-2" title="Remover lista">
             <X size={16} />
@@ -186,21 +186,28 @@ export function BoardColumn({ column, tasks, isOverlay, onAddTask, onRemoveTask,
 
       <ScrollArea>
         <CardContent className="flex flex-grow flex-col gap-2 p-2">
+
           <SortableContext items={tasksIds}>
             {tasks.map((task) => (
-              <div key={task.id} className="relative">
+              <div key={task.id} className="relative group">
                 <TaskCard task={task} />
-                {/* delete task button */}
-                {onRemoveTask && (
-                  <button className="absolute top-1 right-1 p-1 rounded bg-white/80 text-sm" onClick={() => onRemoveTask(task.id.toString())} aria-label={`Remover cartão ${task.content}`}>
-                    <X size={14} />
-                  </button>
-                )}
+
+                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  {onRemoveTask && (
+                    <button
+                      className={actionButtonsStyle}
+                      onClick={() => onRemoveTask(task.id.toString())}
+                      aria-label={`Remover cartão ${task.content}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
               </div>
             ))}
           </SortableContext>
 
-          {/* add new task */}
           {onAddTask && (
             <div className="mt-auto flex gap-2">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setIsModalOpen(true)}>
