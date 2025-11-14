@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, GripVertical, Plus, X } from "lucide-react";
+import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -37,6 +37,7 @@ interface BoardColumnProps {
     targetColumnId: UniqueIdentifier,
     dateISO?: string | null
   ) => void;
+  onToggleProjection?: (taskId: UniqueIdentifier) => void;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -250,6 +251,7 @@ export function BoardColumn({
   onRemoveTask,
   onRemoveColumn,
   onTransferTask,
+  onToggleProjection,
 }: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
   const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
@@ -398,7 +400,18 @@ export function BoardColumn({
 
                 <TaskCard task={task} />
 
-                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+
+                  {task.isProjection && onToggleProjection && (
+                    <button
+                      title="Transformar em saldo"
+                      className={`${actionButtonsStyle} bg-yellow-600/75 hover:bg-yellow-700`}
+                      onClick={() => onToggleProjection(task.id)}
+                      aria-label={`Transformar projeção ${task.content} em saldo`}
+                    >
+                      <SquareCheck size={14} />
+                    </button>
+                  )}
 
                   {onTransferTask && (
                     <button

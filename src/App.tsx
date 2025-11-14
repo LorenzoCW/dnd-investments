@@ -35,7 +35,7 @@ function App() {
           </header> */}
           <main className="mx-4 flex flex-col gap-6">
             <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
-              Drag and Drop Kanban Board
+              DnD Investments
             </h1>
             <KanbanBoard />
             {/* <p className="leading-7 [&:not(:first-child)]:mt-6">

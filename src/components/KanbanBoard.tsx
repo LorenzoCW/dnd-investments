@@ -213,6 +213,16 @@ export function KanbanBoard() {
     });
   }
 
+  function toggleProjection(taskId: UniqueIdentifier) {
+    setTasks((ts) => {
+      const idx = ts.findIndex((t) => t.id === taskId);
+      if (idx === -1) return ts;
+      const updated = ts.slice();
+      updated[idx] = { ...updated[idx], isProjection: false };
+      return normalizeTasks(updated, columnsId);
+    });
+  }
+
   return (
     <DndContext
       accessibility={{ announcements }}
@@ -246,9 +256,8 @@ export function KanbanBoard() {
                 onAddTask={(amount, dateISO, isProjection) => addTask(col.id, amount, dateISO, isProjection)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
                 onRemoveColumn={() => removeColumn(col.id)}
-                onTransferTask={(taskId, amount, targetColumnId, dateISO) =>
-                  transferTask(taskId, amount, targetColumnId, dateISO)
-                }
+                onTransferTask={(taskId, amount, targetColumnId, dateISO) => transferTask(taskId, amount, targetColumnId, dateISO)}
+                onToggleProjection={(taskId) => toggleProjection(taskId)}
               />
             );
           })}
@@ -384,16 +393,15 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
         onAdd(trimmed);
         setValue("");
       }}
-      className="flex gap-2"
+      className="flex gap-2 w-full justify-center"
     >
       <input
         className="border rounded px-2 py-1"
-        placeholder="Nome da lista..."
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
       <button type="submit" className="px-3 py-1 rounded bg-blue-600 text-white">
-        Adicionar lista
+        Adicionar investimento
       </button>
     </form>
   );

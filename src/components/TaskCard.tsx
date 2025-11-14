@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cva } from "class-variance-authority";
 import { GripVertical } from "lucide-react";
 import { ColumnId } from "./KanbanBoard";
+import { Badge } from "./ui/badge";
 
 export interface Task {
   id: UniqueIdentifier;
@@ -73,15 +74,14 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     maximumFractionDigits: 2,
   }).format(task.content);
 
-  const projectionClass = task.isProjection ? "opacity-60" : "";
-
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      className={`${variants({
-        dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined,
-      })} ${projectionClass}`}
+      className={`
+        ${variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
+        ${task.isProjection ? "opacity-60" : ""}
+      `}
     >
       <CardHeader className="px-3 py-3 border-b-2 border-secondary relative">
 
@@ -99,11 +99,11 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
 
           <div className="text-xl">{formattedAmount}</div>
 
-        </div>
+          <Badge variant={"outline"} className="ml-auto font-semibold h-6">
+            {task.isProjection ? "Projeção" : "Saldo"}
+          </Badge>
 
-        {/* <Badge variant={"outline"} className="ml-auto font-semibold">
-          Investimento
-        </Badge> */}
+        </div>
 
       </CardHeader>
 
