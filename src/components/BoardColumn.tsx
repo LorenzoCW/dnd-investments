@@ -1,4 +1,4 @@
-// BoardColumn.tsx
+// File: BoardColumn.tsx
 
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { useDndContext, type UniqueIdentifier } from "@dnd-kit/core";
@@ -28,7 +28,7 @@ interface BoardColumnProps {
   tasks: Task[];
   isOverlay?: boolean;
   allColumns?: Column[];
-  onAddTask?: (amount: number, dateISO?: string | null) => void;
+  onAddTask?: (amount: number, dateISO?: string | null, isProjection?: boolean) => void;
   onRemoveTask?: (taskId: string) => void;
   onRemoveColumn?: () => void;
   onTransferTask?: (
@@ -38,7 +38,6 @@ interface BoardColumnProps {
     dateISO?: string | null
   ) => void;
 }
-
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -119,16 +118,17 @@ function parseCurrencyInput(input: string): number {
   return n;
 }
 
-function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount: number, dateISO?: string | null) => void }) {
+function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount: number, dateISO?: string | null, isProjection?: boolean) => void }) {
   const [amountText, setAmountText] = useState("");
   const [dateTimeLocal, setDateTimeLocal] = useState<string>(toLocalDateTimeInputValue());
+  const [isProjection, setIsProjection] = useState(false);
   const amountInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = () => {
     try {
       const amt = parseCurrencyInput(amountText);
       const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : undefined;
-      onAdd(amt, dateISO ?? undefined);
+      onAdd(amt, dateISO ?? undefined, isProjection ?? false);
     } catch (err: any) {
       alert(err?.message ?? "Valor inválido");
     }
@@ -162,6 +162,7 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
             className="w-full px-3 py-2 rounded border"
           />
         </div>
+
         <div>
           <label className="block text-sm">Data e hora</label>
           <input
@@ -172,6 +173,31 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
             className="w-full px-3 py-2 rounded border"
           />
         </div>
+
+        <div>
+          <span className="text-sm">Tipo</span>
+          <div className="flex items-center gap-3 bg-neutral-700 h-11 rounded-sm border p-4 text-white">
+            <div className="flex items-center gap-2 justify-around w-full">
+              <span className="w-16">Saldo</span>
+              <label className="inline-flex items-center justify-center cursor-pointer w-16">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={isProjection}
+                  onChange={(e) => setIsProjection(e.target.checked)}
+                  aria-label="Adicionar como projeção"
+                />
+                <div className={`w-11 h-6 rounded-full transition-colors ${isProjection ? 'bg-blue-500' : 'bg-gray-500'}`}>
+                  <div
+                    className={`transform transition-transform rounded-full bg-white w-5 h-5 m-0.5 ${isProjection ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </div>
+              </label>
+              <span className="w-16">Projeção</span>
+            </div>
+          </div>
+        </div>
+
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
             Cancelar
@@ -185,7 +211,6 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   );
 }
 
-// Modal de Confirmação de Exclusão
 function ConfirmationModal({
   message,
   onConfirm,
@@ -275,18 +300,35 @@ export function BoardColumn({
     setIsDeleteListOpen(false);
   };
 
-  const totalAmount = useMemo(() => {
-    return tasks.reduce((sum, t) => sum + (typeof t.content === "number" ? t.content : Number(t.content) || 0), 0);
+  // total balance (does not include projections)
+  const sumBalance = useMemo(() => {
+    return tasks.reduce((sum, t) => sum + (t.isProjection ? 0 : (typeof t.content === 'number' ? t.content : Number(t.content) || 0)), 0);
   }, [tasks]);
 
-  const formattedTotal = useMemo(() => {
+  // sum of all projections
+  const sumProjections = useMemo(() => {
+    return tasks.reduce((sum, t) => sum + (t.isProjection ? (typeof t.content === 'number' ? t.content : Number(t.content) || 0) : 0), 0);
+  }, [tasks]);
+
+  const sumAll = useMemo(() => sumBalance + sumProjections, [sumBalance, sumProjections]);
+
+  const formattedBalance = useMemo(() => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(totalAmount);
-  }, [totalAmount]);
+    }).format(sumBalance);
+  }, [sumBalance]);
+
+  const formattedAll = useMemo(() => {
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(sumAll);
+  }, [sumAll]);
 
   const style = { transition, transform: CSS.Translate.toString(transform) };
 
@@ -333,7 +375,9 @@ export function BoardColumn({
 
           <div className="ml-2 text-left">
             <div>{column.title}</div>
-            <div className="text-sm font-medium text-gray-500">{formattedTotal}</div>
+            <div className="text-sm font-medium text-gray-500">
+              {formattedBalance}{sumProjections > 0 ? ` / ${formattedAll}` : ''}
+            </div>
           </div>
 
         </div>
@@ -364,7 +408,7 @@ export function BoardColumn({
                         setTransferState({
                           open: true,
                           task,
-                          amount: Math.floor(task.content),
+                          amount: Math.min(task.content, Math.floor(task.content)),
                           targetColumnId: column.id as UniqueIdentifier,
                           dateTimeLocal: toLocalDateTimeInputValue(new Date()),
                         });
@@ -411,8 +455,8 @@ export function BoardColumn({
         <Modal onClose={() => setIsModalOpen(false)}>
           <AddCardForm
             onCancel={() => setIsModalOpen(false)}
-            onAdd={(amount, dateISO) => {
-              onAddTask(amount, dateISO);
+            onAdd={(amount, dateISO, isProjection) => {
+              onAddTask(amount, dateISO, isProjection);
               setIsModalOpen(false);
             }}
           />

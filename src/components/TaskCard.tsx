@@ -1,4 +1,4 @@
-// TaskCard.tsx
+// File: TaskCard.tsx
 
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
@@ -14,6 +14,7 @@ export interface Task {
   columnId: ColumnId;
   content: number;
   dateISO?: string;
+  isProjection: boolean;
 }
 
 interface TaskCardProps {
@@ -72,13 +73,15 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     maximumFractionDigits: 2,
   }).format(task.content);
 
+  const projectionClass = task.isProjection ? "opacity-60" : "";
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
-      className={variants({
+      className={`${variants({
         dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined,
-      })}
+      })} ${projectionClass}`}
     >
       <CardHeader className="px-3 py-3 border-b-2 border-secondary relative">
 

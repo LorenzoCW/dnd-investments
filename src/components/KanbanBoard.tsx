@@ -1,4 +1,4 @@
-// KanbanBoard.tsx
+// File: KanbanBoard.tsx
 
 import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -32,10 +32,10 @@ const defaultCols: Column[] = [
 export type ColumnId = (typeof defaultCols)[number]["id"] | string;
 
 const initialTasks: Task[] = [
-  { id: "card1", columnId: "investment3", content: 50, dateISO: new Date('2025-11-01T12:00:00Z').toISOString() },
-  { id: "card2", columnId: "investment2", content: 60, dateISO: new Date('2025-11-02T12:00:00Z').toISOString() },
-  { id: "card3", columnId: "investment1", content: 70, dateISO: new Date('2025-11-03T12:00:00Z').toISOString() },
-  { id: "card4", columnId: "investment1", content: 80, dateISO: new Date('2025-11-04T12:00:00Z').toISOString() },
+  { id: "card1", columnId: "investment3", content: 50, dateISO: new Date('2025-11-01T12:00:00Z').toISOString(), isProjection: false },
+  { id: "card2", columnId: "investment2", content: 60, dateISO: new Date('2025-11-02T12:00:00Z').toISOString(), isProjection: false },
+  { id: "card3", columnId: "investment1", content: 70, dateISO: new Date('2025-11-03T12:00:00Z').toISOString(), isProjection: false },
+  { id: "card4", columnId: "investment1", content: 80, dateISO: new Date('2025-11-04T12:00:00Z').toISOString(), isProjection: true },
 ];
 
 export function KanbanBoard() {
@@ -156,13 +156,13 @@ export function KanbanBoard() {
     setTasks((ts) => normalizeTasks(ts.filter((t) => t.columnId !== id), columnsId));
   }
 
-  function addTask(columnId: ColumnId, amount: number, dateISO?: string | null) {
+  function addTask(columnId: ColumnId, amount: number, dateISO?: string | null, isProjection: boolean = false) {
     if (isNaN(amount) || amount <= 0) {
       alert("Informe um valor maior que zero");
       return;
     }
     const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const newTask: Task = { id, columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString() } as Task;
+    const newTask: Task = { id, columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection } as Task;
     setTasks((ts) => normalizeTasks([...ts, newTask], columnsId));
   }
 
@@ -181,7 +181,6 @@ export function KanbanBoard() {
       if (idx === -1) return ts;
 
       const source = ts[idx];
-      // arredondar para 2 casas (se quiser inteiros, troque a lógica)
       const transferAmount = Math.round(amount * 100) / 100;
       if (transferAmount > source.content) {
         alert("Valor de transferência maior que o disponível no cartão");
@@ -190,7 +189,7 @@ export function KanbanBoard() {
 
       const updated = ts.slice();
 
-      // diminuir do cartão original; se chegar a 0 => remover
+      //decrease the original card size, if it reaches 0 => remove
       const remaining = Math.round((source.content - transferAmount) * 100) / 100;
       if (remaining <= 0) {
         updated.splice(idx, 1);
@@ -198,13 +197,14 @@ export function KanbanBoard() {
         updated[idx] = { ...source, content: remaining };
       }
 
-      // criar novo cartão com o valor transferido para a coluna destino
+      // create a new card with the transferred amount in the destination column
       const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const newTask: Task = {
         id: newId,
         columnId: targetColumnId as string,
         content: transferAmount,
         dateISO: dateISO ?? new Date().toISOString(),
+        isProjection: source.isProjection ?? false,
       };
 
       updated.push(newTask);
@@ -243,7 +243,7 @@ export function KanbanBoard() {
                 column={col}
                 tasks={tasksForCol}
                 allColumns={columns}
-                onAddTask={(amount, dateISO) => addTask(col.id, amount, dateISO)}
+                onAddTask={(amount, dateISO, isProjection) => addTask(col.id, amount, dateISO, isProjection)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
                 onRemoveColumn={() => removeColumn(col.id)}
                 onTransferTask={(taskId, amount, targetColumnId, dateISO) =>
