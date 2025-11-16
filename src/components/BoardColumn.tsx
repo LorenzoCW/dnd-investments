@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X } from "lucide-react";
+import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X, CalendarCheck } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -242,6 +242,88 @@ function ConfirmationModal({
   );
 }
 
+function MetaModal({
+  onClose,
+  onCreate,
+}: {
+  onClose: () => void;
+  onCreate: (value: number, startMonthISO: string | null, endMonthISO: string) => void;
+}) {
+  const [valueText, setValueText] = useState("");
+  const [useCustomStart, setUseCustomStart] = useState(false);
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`; // yyyy-mm
+  const [startMonth, setStartMonth] = useState<string | null>(defaultMonth);
+  const [endMonth, setEndMonth] = useState<string>(defaultMonth);
+
+  const handleCreate = () => {
+    try {
+      const v = parseCurrencyInput(valueText);
+      if (!endMonth) {
+        alert("Escolha o mês limite");
+        return;
+      }
+      const start = useCustomStart ? startMonth : defaultMonth;
+      onCreate(v, start ?? null, endMonth);
+    } catch (err: any) {
+      alert(err?.message ?? "Valor inválido");
+    }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <div>
+        <h3 className="text-xl font-semibold mb-3">Criar meta / projeção</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm">Valor total da meta</label>
+            <input
+              value={valueText}
+              onChange={(e) => setValueText(e.target.value)}
+              placeholder="Ex: 2000,00"
+              className="w-full px-3 py-2 rounded border"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm">Mês limite</label>
+            <input
+              type="month"
+              value={endMonth}
+              onChange={(e) => setEndMonth(e.target.value)}
+              className="w-full px-3 py-2 rounded border"
+            />
+          </div>
+
+          <div>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" checked={useCustomStart} onChange={(e) => setUseCustomStart(e.target.checked)} />
+              <span className="text-sm">Escolher mês inicial (opcional)</span>
+            </label>
+            {useCustomStart && (
+              <input
+                type="month"
+                value={startMonth ?? undefined}
+                onChange={(e) => setStartMonth(e.target.value)}
+                className="w-full px-3 py-2 rounded border mt-2"
+              />
+            )}
+          </div>
+
+          <div className="flex gap-2 justify-end mt-4">
+            <button onClick={onClose} className="px-3 py-2 rounded border">
+              Cancelar
+            </button>
+            <button onClick={handleCreate} className="px-3 py-2 rounded bg-blue-600 text-white">
+              Criar projeções
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function BoardColumn({
   column,
   tasks,
@@ -258,6 +340,7 @@ export function BoardColumn({
   const [isDeleteListOpen, setIsDeleteListOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMetaOpen, setIsMetaOpen] = useState(false);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -357,6 +440,38 @@ export function BoardColumn({
     dateTimeLocal?: string;
   };
 
+  function createProjections(totalValue: number, startMonthISO: string | null, endMonthISO: string) {
+    // startMonthISO and endMonthISO are in format 'YYYY-MM' (from input type month)
+    const now = new Date();
+    const startParts = (startMonthISO ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`).split('-');
+    const endParts = endMonthISO.split('-');
+    const startYear = Number(startParts[0]);
+    const startMonth = Number(startParts[1]);
+    const endYear = Number(endParts[0]);
+    const endMonth = Number(endParts[1]);
+
+    const monthsCount = (endYear - startYear) * 12 + (endMonth - startMonth);
+
+    if (!monthsCount || monthsCount <= 0) {
+      alert('O mês limite deve ser posterior ao mês inicial (ou diferente do mês atual).');
+      return;
+    }
+
+    const base = Math.floor((totalValue / monthsCount) * 100) / 100;
+    const projections: { amount: number; dateISO: string }[] = [];
+
+    for (let i = 0; i < monthsCount; i++) {
+      const amt = i < monthsCount - 1 ? base : Math.round((totalValue - base * (monthsCount - 1)) * 100) / 100;
+      const date = new Date(startYear, startMonth - 1 + i + 1, 1, 12, 0, 0);
+
+      projections.push({ amount: amt, dateISO: date.toISOString() });
+    }
+
+    // onAddTask for each projection
+    if (!onAddTask) return;
+    projections.forEach((p) => onAddTask(p.amount, p.dateISO, true));
+  }
+
   return (
     <Card
       ref={setNodeRef}
@@ -384,11 +499,26 @@ export function BoardColumn({
 
         </div>
 
-        {onRemoveColumn && (
-          <Button variant="ghost" onClick={handleOpenDeleteColumnModal} title="Remover lista">
-            <X size={16} />
+
+        <div className="flex items-center">
+
+          {onAddTask && (
+            <Button variant="ghost" onClick={() => setIsModalOpen(true)} title="Adicionar cartão">
+                <Plus size={16} />
+            </Button>
+          )}
+
+          <Button variant="ghost" onClick={() => setIsMetaOpen(true)} title="Criar projeção">
+            <CalendarCheck size={16} />
           </Button>
-        )}
+
+          {onRemoveColumn && (
+            <Button variant="ghost" onClick={handleOpenDeleteColumnModal} title="Remover lista">
+              <X size={16} />
+            </Button>
+          )}
+
+        </div>
 
       </CardHeader>
 
@@ -476,7 +606,16 @@ export function BoardColumn({
         </Modal>
       )}
 
-      {/* Modal de transferência */}
+      {isMetaOpen && (
+        <MetaModal
+          onClose={() => setIsMetaOpen(false)}
+          onCreate={(value, startMonthISO, endMonthISO) => {
+            createProjections(value, startMonthISO, endMonthISO);
+            setIsMetaOpen(false);
+          }}
+        />
+      )}
+
       {transferState.open && transferState.task && onTransferTask && (
         <Modal
           onClose={() =>
@@ -627,7 +766,6 @@ export function BoardColumn({
         </Modal>
       )}
 
-      {/* Modal de confirmação de exclusão de card */}
       {isDeleteCardOpen && taskToDelete && (
         <ConfirmationModal
           message={`Excluir o cartão "${taskToDelete.content}"?`}
@@ -636,7 +774,6 @@ export function BoardColumn({
         />
       )}
 
-      {/* Modal de confirmação de exclusão de coluna (lista) */}
       {isDeleteListOpen && (
         <ConfirmationModal
           message={`Excluir a lista "${column.title}"? Isso removerá todos os cartões nela.`}
