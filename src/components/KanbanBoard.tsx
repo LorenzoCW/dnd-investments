@@ -223,6 +223,24 @@ export function KanbanBoard() {
     });
   }
 
+  function editTask(taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection: boolean = false) {
+    if (isNaN(amount) || amount <= 0) {
+      alert("Informe um valor maior que zero");
+      return;
+    }
+
+    setTasks((ts) => {
+      const idx = ts.findIndex((t) => t.id === taskId);
+      if (idx === -1) return ts;
+      const updated = ts.slice();
+      const normalizedDateISO = dateISO ? new Date(dateISO).toISOString() : new Date().toISOString();
+      // round amount to 2 decimals
+      const rounded = Math.round(amount * 100) / 100;
+      updated[idx] = { ...updated[idx], content: rounded, dateISO: normalizedDateISO, isProjection };
+      return normalizeTasks(updated, columnsId);
+    });
+  }
+
   return (
     <DndContext
       accessibility={{ announcements }}
@@ -258,6 +276,7 @@ export function KanbanBoard() {
                 onRemoveColumn={() => removeColumn(col.id)}
                 onTransferTask={(taskId, amount, targetColumnId, dateISO) => transferTask(taskId, amount, targetColumnId, dateISO)}
                 onToggleProjection={(taskId) => toggleProjection(taskId)}
+                onEditTask={(taskId, amount, dateISO, isProjection) => editTask(taskId, amount, dateISO, isProjection)}
               />
             );
           })}
@@ -398,6 +417,7 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
       <input
         className="border rounded px-2 py-1"
         value={value}
+        maxLength={14}
         onChange={(e) => setValue(e.target.value)}
       />
       <button type="submit" className="px-3 py-1 rounded bg-blue-600 text-white">

@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X, CalendarCheck } from "lucide-react";
+import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X, CalendarCheck, Edit } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -38,6 +38,7 @@ interface BoardColumnProps {
     dateISO?: string | null
   ) => void;
   onToggleProjection?: (taskId: UniqueIdentifier) => void;
+  onEditTask?: (taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection?: boolean) => void;
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
@@ -212,6 +213,116 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
   );
 }
 
+function EditCardForm({
+  initialAmount,
+  initialDateISO,
+  initialIsProjection,
+  onCancel,
+  onSave,
+}: {
+  initialAmount: number;
+  initialDateISO?: string | null;
+  initialIsProjection?: boolean;
+  onCancel: () => void;
+  onSave: (amount: number, dateISO?: string | null, isProjection?: boolean) => void;
+}) {
+  const [amountText, setAmountText] = useState<string>(() => {
+    // Use dot as decimal separator which parseCurrencyInput accepts; show 2 decimals
+    return initialAmount.toFixed(2);
+  });
+  const [dateTimeLocal, setDateTimeLocal] = useState<string>(() => {
+    return initialDateISO ? toLocalDateTimeInputValue(new Date(initialDateISO)) : toLocalDateTimeInputValue();
+  });
+  const [isProjection, setIsProjection] = useState<boolean>(!!initialIsProjection);
+  const amountInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = () => {
+    try {
+      const amt = parseCurrencyInput(amountText);
+      const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : undefined;
+      onSave(amt, dateISO ?? undefined, isProjection ?? false);
+    } catch (err: any) {
+      alert(err?.message ?? "Valor inválido");
+    }
+  };
+
+  useEffect(() => {
+    amountInputRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          handleSave();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <h3 className="text-xl font-semibold mb-3">Editar cartão</h3>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-sm">Valor</label>
+          <input
+            ref={amountInputRef}
+            value={amountText}
+            onChange={(e) => setAmountText(e.target.value)}
+            placeholder="Ex: 500 ou 500,00 ou 1.234,56"
+            className="w-full px-3 py-2 rounded border"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm">Data e hora</label>
+          <input
+            type="datetime-local"
+            step={1}
+            value={dateTimeLocal}
+            onChange={(e) => setDateTimeLocal(e.target.value)}
+            className="w-full px-3 py-2 rounded border"
+          />
+        </div>
+
+        <div>
+          <span className="text-sm">Tipo</span>
+          <div className="flex items-center gap-3 bg-neutral-700 h-11 rounded-sm border p-4 text-white">
+            <div className="flex items-center gap-2 justify-around w-full">
+              <span className="w-16">Saldo</span>
+              <label className="inline-flex items-center justify-center cursor-pointer w-16">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={isProjection}
+                  onChange={(e) => setIsProjection(e.target.checked)}
+                  aria-label="Marcar como projeção"
+                />
+                <div className={`w-11 h-6 rounded-full transition-colors ${isProjection ? 'bg-blue-500' : 'bg-gray-500'}`}>
+                  <div
+                    className={`transform transition-transform rounded-full bg-white w-5 h-5 m-0.5 ${isProjection ? 'translate-x-5' : 'translate-x-0'}`}
+                  />
+                </div>
+              </label>
+              <span className="w-16">Projeção</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
+            Cancelar
+          </button>
+          <button onClick={handleSave} className="px-3 py-2 rounded bg-amber-600 text-white cursor-pointer">
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmationModal({
   message,
   onConfirm,
@@ -315,7 +426,7 @@ function MetaModal({
               Cancelar
             </button>
             <button onClick={handleCreate} className="px-3 py-2 rounded bg-blue-600 text-white">
-              Criar projeções
+              Criar projeção
             </button>
           </div>
         </div>
@@ -334,6 +445,7 @@ export function BoardColumn({
   onRemoveColumn,
   onTransferTask,
   onToggleProjection,
+  onEditTask,
 }: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
   const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
@@ -360,6 +472,11 @@ export function BoardColumn({
     targetColumnId: column.id,
     dateTimeLocal: toLocalDateTimeInputValue(),
   });
+
+  const [editState, setEditState] = useState<{
+    open: boolean;
+    task: Task | null;
+  }>({ open: false, task: null });
 
   const handleOpenDeleteCardModal = (task: Task) => {
     setTaskToDelete(task);
@@ -503,17 +620,17 @@ export function BoardColumn({
         <div className="flex items-center">
 
           {onAddTask && (
-            <Button variant="ghost" onClick={() => setIsModalOpen(true)} title="Adicionar cartão">
-                <Plus size={16} />
+            <Button variant="ghost" className="hover:text-green-500" onClick={() => setIsModalOpen(true)} title="Adicionar cartão">
+              <Plus size={16} />
             </Button>
           )}
 
-          <Button variant="ghost" onClick={() => setIsMetaOpen(true)} title="Criar projeção">
+          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsMetaOpen(true)} title="Criar projeção">
             <CalendarCheck size={16} />
           </Button>
 
           {onRemoveColumn && (
-            <Button variant="ghost" onClick={handleOpenDeleteColumnModal} title="Remover lista">
+            <Button variant="ghost" className="hover:text-rose-600" onClick={handleOpenDeleteColumnModal} title="Remover lista">
               <X size={16} />
             </Button>
           )}
@@ -530,12 +647,12 @@ export function BoardColumn({
 
                 <TaskCard task={task} />
 
-                <div className="absolute w-full z-10 -bottom-1 space-x-1 flex justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+                <div className="absolute w-full z-10 -bottom-1 flex justify-center opacity-0 group-hover:opacity-100 gap-0.5 group-hover:gap-1.5 transition-all duration-300">
 
                   {task.isProjection && onToggleProjection && (
                     <button
                       title="Transformar em saldo"
-                      className={`${actionButtonsStyle} bg-yellow-600/75 hover:bg-yellow-700`}
+                      className={`${actionButtonsStyle} bg-emerald-600 hover:ring ring-emerald-600`}
                       onClick={() => onToggleProjection(task.id)}
                       aria-label={`Transformar projeção ${task.content} em saldo`}
                     >
@@ -546,7 +663,7 @@ export function BoardColumn({
                   {onTransferTask && (
                     <button
                       title="Transferir valor"
-                      className={`${actionButtonsStyle} bg-blue-500/75 hover:bg-blue-600`}
+                      className={`${actionButtonsStyle} bg-indigo-600 hover:ring ring-indigo-600`}
                       onClick={() => {
                         setTransferState({
                           open: true,
@@ -561,10 +678,20 @@ export function BoardColumn({
                     </button>
                   )}
 
+                  {onEditTask && (
+                    <button
+                      title="Editar cartão"
+                      className={`${actionButtonsStyle} bg-yellow-600 hover:ring ring-yellow-600`}
+                      onClick={() => setEditState({ open: true, task })}
+                    >
+                      <Edit size={14} />
+                    </button>
+                  )}
+
                   {onRemoveTask && (
                     <button
                       title="Remover cartão"
-                      className={`${actionButtonsStyle} bg-rose-500/75 hover:bg-rose-600`}
+                      className={`${actionButtonsStyle} bg-rose-600 hover:ring ring-rose-600`}
                       onClick={() => handleOpenDeleteCardModal(task)}
                       aria-label={`Remover cartão ${task.content}`}
                     >
@@ -614,6 +741,23 @@ export function BoardColumn({
             setIsMetaOpen(false);
           }}
         />
+      )}
+
+      {editState.open && editState.task && onEditTask && (
+        <Modal
+          onClose={() => setEditState({ open: false, task: null })}
+        >
+          <EditCardForm
+            initialAmount={typeof editState.task.content === 'number' ? editState.task.content : Number(editState.task.content) || 0}
+            initialDateISO={editState.task.dateISO ?? undefined}
+            initialIsProjection={!!editState.task.isProjection}
+            onCancel={() => setEditState({ open: false, task: null })}
+            onSave={(amount, dateISO, isProjection) => {
+              onEditTask(editState.task!.id, amount, dateISO ?? undefined, isProjection ?? false);
+              setEditState({ open: false, task: null });
+            }}
+          />
+        </Modal>
       )}
 
       {transferState.open && transferState.task && onTransferTask && (
@@ -756,7 +900,7 @@ export function BoardColumn({
                       dateTimeLocal: toLocalDateTimeInputValue(),
                     });
                   }}
-                  className="px-3 py-2 rounded bg-blue-600 text-white cursor-pointer"
+                  className="px-3 py-2 rounded bg-indigo-600 text-white cursor-pointer"
                 >
                   Transferir
                 </button>
