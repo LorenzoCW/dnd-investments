@@ -4,9 +4,7 @@ import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { cva } from "class-variance-authority";
-import { GripVertical } from "lucide-react";
 import { ColumnId } from "./KanbanBoard";
 import { Badge } from "./ui/badge";
 
@@ -83,19 +81,13 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
         ${task.isProjection ? "opacity-60" : ""}
       `}
     >
-      <CardHeader className="px-3 py-3 border-b-2 border-secondary relative">
+      <CardHeader
+        {...attributes}
+        {...listeners}
+        className="px-3 py-3 border-b-2 border-secondary relative cursor-grab"
+      >
 
         <div className="flex">
-
-          <Button
-            variant={"ghost"}
-            {...attributes}
-            {...listeners}
-            className="p-1 text-secondary-foreground/50 h-auto -ml-2 cursor-grab"
-          >
-            <span className="sr-only">Move task</span>
-            <GripVertical />
-          </Button>
 
           <div className="text-xl">{formattedAmount}</div>
 

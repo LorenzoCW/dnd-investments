@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, GripVertical, Plus, SquareCheck, X, CalendarCheck, Edit } from "lucide-react";
+import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -201,10 +201,10 @@ function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount
         </div>
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
+          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer hover:ring ring-slate-800 transition-all duration-300">
             Cancelar
           </button>
-          <button onClick={handleAdd} className="px-3 py-2 rounded bg-green-600 text-white cursor-pointer">
+          <button onClick={handleAdd} className="px-3 py-2 rounded bg-green-600 text-white hover:ring ring-green-600 transition-all duration-300 cursor-pointer">
             Adicionar
           </button>
         </div>
@@ -311,10 +311,10 @@ function EditCardForm({
         </div>
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
+          <button onClick={onCancel} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
             Cancelar
           </button>
-          <button onClick={handleSave} className="px-3 py-2 rounded bg-amber-600 text-white cursor-pointer">
+          <button onClick={handleSave} className="px-3 py-2 rounded bg-amber-600 text-white hover:ring ring-amber-600 transition-all duration-300 cursor-pointer">
             Salvar
           </button>
         </div>
@@ -338,12 +338,12 @@ function ConfirmationModal({
         <h3 className="text-xl font-semibold mb-3">Confirmar exclusão</h3>
         <p>{message}</p>
         <div className="flex gap-2 justify-end mt-4">
-          <button onClick={onCancel} className="px-3 py-2 rounded border cursor-pointer">
+          <button onClick={onCancel} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
             Cancelar
           </button>
           <button
             onClick={onConfirm}
-            className="px-3 py-2 rounded bg-rose-600 text-white cursor-pointer"
+            className="px-3 py-2 rounded bg-rose-600 text-white hover:ring ring-rose-600 transition-all duration-300 cursor-pointer"
           >
             Confirmar
           </button>
@@ -384,7 +384,7 @@ function MetaModal({
   return (
     <Modal onClose={onClose}>
       <div>
-        <h3 className="text-xl font-semibold mb-3">Criar meta / projeção</h3>
+        <h3 className="text-xl font-semibold mb-3">Criar projeção</h3>
         <div className="space-y-3">
           <div>
             <label className="block text-sm">Valor total da meta</label>
@@ -422,10 +422,10 @@ function MetaModal({
           </div>
 
           <div className="flex gap-2 justify-end mt-4">
-            <button onClick={onClose} className="px-3 py-2 rounded border">
+            <button onClick={onClose} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
               Cancelar
             </button>
-            <button onClick={handleCreate} className="px-3 py-2 rounded bg-blue-600 text-white">
+            <button onClick={handleCreate} className="px-3 py-2 rounded bg-blue-600 text-white hover:ring ring-blue-600 transition-all duration-300 cursor-pointer">
               Criar projeção
             </button>
           </div>
@@ -595,42 +595,36 @@ export function BoardColumn({
       style={style}
       className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
     >
-      <CardHeader className="p-4 font-semibold border-b-2 flex flex-row justify-between">
+      <CardHeader
+        {...attributes}
+        {...listeners}
+        className="p-4 font-semibold border-b-2 flex flex-row justify-between cursor-grab"
+      >
 
         <div className="flex items-center">
-          <Button
-            variant={"ghost"}
-            {...attributes}
-            {...listeners}
-            className="p-1 text-primary/50 -ml-2 h-auto cursor-grab relative"
-          >
-            <GripVertical />
-          </Button>
-
           <div className="ml-2 text-left">
             <div>{column.title}</div>
             <div className="text-sm font-medium text-gray-500">
               {formattedBalance}{sumProjections > 0 ? ` / ${formattedAll}` : ''}
             </div>
           </div>
-
         </div>
 
 
         <div className="flex items-center">
 
           {onAddTask && (
-            <Button variant="ghost" className="hover:text-green-500" onClick={() => setIsModalOpen(true)} title="Adicionar cartão">
+            <Button variant="ghost" className="hover:text-green-500" onClick={() => setIsModalOpen(true)} title="Adicionar cartão" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
               <Plus size={16} />
             </Button>
           )}
 
-          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsMetaOpen(true)} title="Criar projeção">
+          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsMetaOpen(true)} title="Criar projeção" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
             <CalendarCheck size={16} />
           </Button>
 
           {onRemoveColumn && (
-            <Button variant="ghost" className="hover:text-rose-600" onClick={handleOpenDeleteColumnModal} title="Remover lista">
+            <Button variant="ghost" className="hover:text-rose-500" onClick={handleOpenDeleteColumnModal} title="Remover lista" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
               <X size={16} />
             </Button>
           )}
@@ -863,7 +857,7 @@ export function BoardColumn({
                       dateTimeLocal: toLocalDateTimeInputValue(),
                     })
                   }
-                  className="px-3 py-2 rounded border cursor-pointer"
+                  className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer"
                 >
                   Cancelar
                 </button>
@@ -900,7 +894,7 @@ export function BoardColumn({
                       dateTimeLocal: toLocalDateTimeInputValue(),
                     });
                   }}
-                  className="px-3 py-2 rounded bg-indigo-600 text-white cursor-pointer"
+                  className="px-3 py-2 rounded bg-indigo-600 text-white hover:ring ring-indigo-600 transition-all duration-300 cursor-pointer"
                 >
                   Transferir
                 </button>

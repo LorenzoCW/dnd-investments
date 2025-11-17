@@ -23,28 +23,15 @@ import { type Task, TaskCard } from "./TaskCard";
 import { hasDraggableData } from "./utils";
 import { coordinateGetter } from "./multipleContainersKeyboardPreset";
 
-const defaultCols: Column[] = [
-  { id: "investment1", title: "Investment 1" },
-  { id: "investment2", title: "Investment 2" },
-  { id: "investment3", title: "Investment 3" },
-];
+const column: Column[] = [];
 
-export type ColumnId = (typeof defaultCols)[number]["id"] | string;
-
-const initialTasks: Task[] = [
-  { id: "card1", columnId: "investment3", content: 50, dateISO: new Date('2025-11-01T12:00:00Z').toISOString(), isProjection: false },
-  { id: "card2", columnId: "investment2", content: 60, dateISO: new Date('2025-11-02T12:00:00Z').toISOString(), isProjection: false },
-  { id: "card3", columnId: "investment1", content: 70, dateISO: new Date('2025-11-03T12:00:00Z').toISOString(), isProjection: false },
-  { id: "card4", columnId: "investment1", content: 80, dateISO: new Date('2025-11-04T12:00:00Z').toISOString(), isProjection: true },
-];
+export type ColumnId = (typeof column)[number]["id"] | string;
 
 export function KanbanBoard() {
 
-  const [columns, setColumns] = useState<Column[]>(defaultCols); // teste
-  // const [columns, setColumns] = useState<Column[]>([]);
+  const [columns, setColumns] = useState<Column[]>([]);
 
-  const [tasks, setTasks] = useState<Task[]>(() => initialTasks); // teste
-  // const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
   const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
@@ -417,10 +404,10 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
       <input
         className="border rounded px-2 py-1"
         value={value}
-        maxLength={14}
+        maxLength={18}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="submit" className="px-3 py-1 rounded bg-blue-600 text-white">
+      <button type="submit" className="px-3 py-1 rounded bg-sky-700 text-white hover:ring ring-sky-700 transition-all duration-300 cursor-pointer">
         Adicionar investimento
       </button>
     </form>
