@@ -41,16 +41,15 @@ interface BoardColumnProps {
   onEditTask?: (taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection?: boolean) => void;
 }
 
-function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function Modal({ children }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
-      onClick={onClose}
       role="dialog"
       aria-modal
     >
       <div
-        className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-xl"
+        className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-xl border-2 border-slate-800 shadow-2xl shadow-neutral-500/5"
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -358,28 +357,80 @@ function MetaModal({
   onCreate,
 }: {
   onClose: () => void;
-  onCreate: (value: number, startMonthISO: string | null, endMonthISO: string) => void;
+  onCreate: (value: number, startMonthISO: string | null, endMonthISO: string, dayNumber: number) => void;
 }) {
   const [valueText, setValueText] = useState("");
   const [useCustomStart, setUseCustomStart] = useState(false);
   const now = new Date();
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`; // yyyy-mm
-  const [startMonth, setStartMonth] = useState<string | null>(defaultMonth);
-  const [endMonth, setEndMonth] = useState<string>(defaultMonth);
+  const defaultMonthNum = now.getMonth() + 1;
+  const defaultYear = now.getFullYear();
+
+  const [startMonthNum, setStartMonthNum] = useState<string>(String(defaultMonthNum));
+  const [startYear, setStartYear] = useState<string>(String(defaultYear));
+  const [endMonthNum, setEndMonthNum] = useState<string>(String(defaultMonthNum));
+  const [endYear, setEndYear] = useState<string>(String(defaultYear));
+  const [dayNum, setDayNum] = useState<string>("1");
+
+  function buildISO(monthStr: string, yearStr: string) {
+    const m = Number(monthStr);
+    const y = Number(yearStr);
+    if (!Number.isFinite(m) || !Number.isFinite(y)) return null;
+    const mm = String(m).padStart(2, "0");
+    return `${y}-${mm}`; // YYYY-MM
+  }
+
+  function computePreview(value: number, startISO: string | null, endISO: string) {
+    // returns array of amounts and last amount
+    try {
+      const startParts = (startISO ?? `${defaultYear}-${String(defaultMonthNum).padStart(2, "0")}`).split("-");
+      const endParts = endISO.split("-");
+      const startY = Number(startParts[0]);
+      const startM = Number(startParts[1]);
+      const endY = Number(endParts[0]);
+      const endM = Number(endParts[1]);
+
+      const monthsCount = (endY - startY) * 12 + (endM - startM) + 1; // inclusive
+      if (!monthsCount || monthsCount <= 0) return null;
+      const base = Math.floor((value / monthsCount) * 100) / 100;
+      const amounts: number[] = [];
+      for (let i = 0; i < monthsCount; i++) {
+        const amt = i < monthsCount - 1 ? base : Math.round((value - base * (monthsCount - 1)) * 100) / 100;
+        amounts.push(amt);
+      }
+      return amounts;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  const previewAmounts = useMemo(() => {
+    try {
+      const v = parseCurrencyInput(valueText);
+      const startISO = useCustomStart ? buildISO(startMonthNum, startYear) : null;
+      const endISO = buildISO(endMonthNum, endYear);
+      return computePreview(v, startISO, endISO!);
+    } catch (e) {
+      return null;
+    }
+  }, [valueText, useCustomStart, startMonthNum, startYear, endMonthNum, endYear, dayNum]);
 
   const handleCreate = () => {
     try {
       const v = parseCurrencyInput(valueText);
-      if (!endMonth) {
-        alert("Escolha o mês limite");
+      const startISO = useCustomStart ? buildISO(startMonthNum, startYear) : null;
+      const endISO = buildISO(endMonthNum, endYear);
+      const day = Math.max(1, Math.min(31, Number(dayNum) || 1));
+      if (!endISO) {
+        alert("Escolha a data limite corretamente");
         return;
       }
-      const start = useCustomStart ? startMonth : defaultMonth;
-      onCreate(v, start ?? null, endMonth);
+      onCreate(v, startISO ?? null, endISO, day);
     } catch (err: any) {
       alert(err?.message ?? "Valor inválido");
     }
   };
+
+  const formatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <Modal onClose={onClose}>
@@ -389,6 +440,7 @@ function MetaModal({
           <div>
             <label className="block text-sm">Valor total da meta</label>
             <input
+              type="number"
               value={valueText}
               onChange={(e) => setValueText(e.target.value)}
               placeholder="Ex: 2000,00"
@@ -397,13 +449,11 @@ function MetaModal({
           </div>
 
           <div>
-            <label className="block text-sm">Mês limite</label>
-            <input
-              type="month"
-              value={endMonth}
-              onChange={(e) => setEndMonth(e.target.value)}
-              className="w-full px-3 py-2 rounded border"
-            />
+            <label className="block text-sm">Data limite</label>
+            <div className="flex gap-2">
+              <input type="number" min={1} max={12} value={endMonthNum} onChange={(e) => setEndMonthNum(e.target.value)} className="w-1/3 px-3 py-2 rounded border" placeholder="MM" />
+              <input type="number" min={1900} value={endYear} onChange={(e) => setEndYear(e.target.value)} className="w-2/3 px-3 py-2 rounded border" placeholder="YYYY" />
+            </div>
           </div>
 
           <div>
@@ -412,14 +462,29 @@ function MetaModal({
               <span className="text-sm">Escolher mês inicial (opcional)</span>
             </label>
             {useCustomStart && (
-              <input
-                type="month"
-                value={startMonth ?? undefined}
-                onChange={(e) => setStartMonth(e.target.value)}
-                className="w-full px-3 py-2 rounded border mt-2"
-              />
+              <div className="flex gap-2 mt-2">
+                <input type="number" min={1} max={12} value={startMonthNum} onChange={(e) => setStartMonthNum(e.target.value)} className="w-1/3 px-3 py-2 rounded border" placeholder="MM" />
+                <input type="number" min={1900} value={startYear} onChange={(e) => setStartYear(e.target.value)} className="w-2/3 px-3 py-2 rounded border" placeholder="YYYY" />
+              </div>
             )}
           </div>
+
+          <div>
+            <label className="block text-sm">Dia do mês para as parcelas</label>
+            <input type="number" min={1} max={31} value={dayNum} onChange={(e) => setDayNum(e.target.value)} className="w-full px-3 py-2 rounded border" />
+          </div>
+
+          {previewAmounts && (
+            <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded">
+              <div className="text-sm font-medium mb-1">Pré-visualização das parcelas</div>
+              <div className="text-sm">
+                {previewAmounts.map((a, idx) => (
+                  <div key={idx}>{`Parcela ${idx + 1}: ${formatter.format(a)}`}</div>
+                ))}
+                <div className="mt-2 text-xs text-gray-500">Total parcelas: {previewAmounts.length} — última parcela: {formatter.format(previewAmounts[previewAmounts.length - 1])}</div>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 justify-end mt-4">
             <button onClick={onClose} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
@@ -460,9 +525,7 @@ export function BoardColumn({
       type: "Column",
       column,
     } satisfies ColumnDragData,
-    attributes: {
-      roleDescription: `Column: ${column.title}`,
-    },
+    attributes: { roleDescription: `Column: ${column.title}` },
   });
 
   const [transferState, setTransferState] = useState<TransferState>({
@@ -557,8 +620,12 @@ export function BoardColumn({
     dateTimeLocal?: string;
   };
 
-  function createProjections(totalValue: number, startMonthISO: string | null, endMonthISO: string) {
-    // startMonthISO and endMonthISO are in format 'YYYY-MM' (from input type month)
+  function getDaysInMonth(year: number, month: number) {
+    return new Date(year, month, 0).getDate();
+  }
+
+  function createProjections(totalValue: number, startMonthISO: string | null, endMonthISO: string, dayNumber: number) {
+    // startMonthISO and endMonthISO are in format 'YYYY-MM'
     const now = new Date();
     const startParts = (startMonthISO ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`).split('-');
     const endParts = endMonthISO.split('-');
@@ -567,10 +634,10 @@ export function BoardColumn({
     const endYear = Number(endParts[0]);
     const endMonth = Number(endParts[1]);
 
-    const monthsCount = (endYear - startYear) * 12 + (endMonth - startMonth);
+    const monthsCount = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
 
     if (!monthsCount || monthsCount <= 0) {
-      alert('O mês limite deve ser posterior ao mês inicial (ou diferente do mês atual).');
+      alert('O mês limite deve ser igual ou posterior ao mês inicial.');
       return;
     }
 
@@ -579,12 +646,16 @@ export function BoardColumn({
 
     for (let i = 0; i < monthsCount; i++) {
       const amt = i < monthsCount - 1 ? base : Math.round((totalValue - base * (monthsCount - 1)) * 100) / 100;
-      const date = new Date(startYear, startMonth - 1 + i + 1, 1, 12, 0, 0);
+      const year = startYear + Math.floor((startMonth - 1 + i) / 12);
+      const month = ((startMonth - 1 + i) % 12) + 1;
+      // clamp day to last day of that month
+      const day = Math.max(1, Math.min(dayNumber, getDaysInMonth(year, month)));
+      const date = new Date(year, month - 1, day, 12, 0, 0);
 
       projections.push({ amount: amt, dateISO: date.toISOString() });
     }
 
-    // onAddTask for each projection
+    // call onAddTask for each projection
     if (!onAddTask) return;
     projections.forEach((p) => onAddTask(p.amount, p.dateISO, true));
   }
@@ -610,9 +681,7 @@ export function BoardColumn({
           </div>
         </div>
 
-
         <div className="flex items-center">
-
           {onAddTask && (
             <Button variant="ghost" className="hover:text-green-500" onClick={() => setIsModalOpen(true)} title="Adicionar cartão" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
               <Plus size={16} />
@@ -630,7 +699,6 @@ export function BoardColumn({
           )}
 
         </div>
-
       </CardHeader>
 
       <ScrollArea>
@@ -642,7 +710,6 @@ export function BoardColumn({
                 <TaskCard task={task} />
 
                 <div className="absolute w-full z-10 -bottom-1 flex justify-center opacity-0 group-hover:opacity-100 gap-0.5 group-hover:gap-1.5 transition-all duration-300">
-
                   {task.isProjection && onToggleProjection && (
                     <button
                       title="Transformar em saldo"
@@ -692,7 +759,6 @@ export function BoardColumn({
                       <X size={14} />
                     </button>
                   )}
-
                 </div>
               </div>
             ))}
@@ -730,8 +796,8 @@ export function BoardColumn({
       {isMetaOpen && (
         <MetaModal
           onClose={() => setIsMetaOpen(false)}
-          onCreate={(value, startMonthISO, endMonthISO) => {
-            createProjections(value, startMonthISO, endMonthISO);
+          onCreate={(value, startMonthISO, endMonthISO, dayNumber) => {
+            createProjections(value, startMonthISO, endMonthISO, dayNumber);
             setIsMetaOpen(false);
           }}
         />
