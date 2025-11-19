@@ -1,6 +1,6 @@
 // File: KanbanBoard.tsx
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 import { BoardColumn, BoardContainer, type Column } from "./BoardColumn";
@@ -23,14 +23,12 @@ import { type Task, TaskCard } from "./TaskCard";
 import { hasDraggableData } from "./utils";
 import { coordinateGetter } from "./multipleContainersKeyboardPreset";
 
-const column: Column[] = [];
+import * as db from "../lib/db";
 
-export type ColumnId = (typeof column)[number]["id"] | string;
+export type ColumnId = Column["id"] | string;
 
 export function KanbanBoard() {
-
   const [columns, setColumns] = useState<Column[]>([]);
-
   const [tasks, setTasks] = useState<Task[]>([]);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
@@ -46,30 +44,49 @@ export function KanbanBoard() {
     })
   );
 
-  function normalizeTasks(inputTasks: Task[], colsOrder: ColumnId[]) {
-    const byColumn: Task[] = [];
-    for (const colId of colsOrder) {
-      const tasksForCol = inputTasks
-        .filter((t) => t.columnId === colId)
-        .slice()
-        .sort((a, b) => {
-          const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
-          const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
-          return tb - ta;
-        });
-      byColumn.push(...tasksForCol);
-    }
+  useEffect(() => {
+    const unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
+      setColumns(cols);
 
-    // fallback
-    const remaining = inputTasks.filter((t) => !colsOrder.includes(t.columnId));
-    remaining.sort((a, b) => {
-      const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
-      const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
-      return tb - ta;
+      const mappedTasks: Task[] = ts.map((t) => ({
+        id: t.id,
+        columnId: t.columnId,
+        content: typeof t.content === "number" ? t.content : Number(t.content) || 0,
+        dateISO: t.dateISO ?? undefined,
+        isProjection: !!t.isProjection,
+      }));
+      setTasks(mappedTasks);
     });
-    byColumn.push(...remaining);
-    return byColumn;
-  }
+
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  // function normalizeTasks(inputTasks: Task[], colsOrder: ColumnId[]) {
+  //   const byColumn: Task[] = [];
+  //   for (const colId of colsOrder) {
+  //     const tasksForCol = inputTasks
+  //       .filter((t) => t.columnId === colId)
+  //       .slice()
+  //       .sort((a, b) => {
+  //         const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+  //         const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+  //         return tb - ta;
+  //       });
+  //     byColumn.push(...tasksForCol);
+  //   }
+
+  //   // fallback
+  //   const remaining = inputTasks.filter((t) => !colsOrder.includes(t.columnId));
+  //   remaining.sort((a, b) => {
+  //     const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
+  //     const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
+  //     return tb - ta;
+  //   });
+  //   byColumn.push(...remaining);
+  //   return byColumn;
+  // }
 
   function getDraggingTaskData(taskId: UniqueIdentifier, columnId: ColumnId) {
     const tasksInColumn = tasks.filter((task) => task.columnId === columnId);
@@ -109,19 +126,16 @@ export function KanbanBoard() {
         return `Task was moved over position ${taskPosition + 1} of ${tasksInColumn.length} in column ${column?.title}`;
       }
     },
-    onDragEnd({ active, over }) {
-      if (!hasDraggableData(active) || !hasDraggableData(over)) {
+    onDragEnd({ active }) {
+      if (!hasDraggableData(active) || !hasDraggableData(active)) {
         pickedUpTaskColumn.current = null;
         return;
       }
-      if (active.data.current?.type === "Column" && over.data.current?.type === "Column") {
-        const overColumnPosition = columnsId.findIndex((id) => id === over.id);
+      if (active.data.current?.type === "Column") {
+        const overColumnPosition = columnsId.findIndex((id) => id === active.id);
         return `Column ${active.data.current.column.title} was dropped into position ${overColumnPosition + 1} of ${columnsId.length}`;
-      } else if (active.data.current?.type === "Task" && over.data.current?.type === "Task") {
-        const { tasksInColumn, taskPosition, column } = getDraggingTaskData(over.id, over.data.current.task.columnId);
-        if (over.data.current.task.columnId !== pickedUpTaskColumn.current) {
-          return `Task was dropped into column ${column?.title} in position ${taskPosition + 1} of ${tasksInColumn.length}`;
-        }
+      } else if (active.data.current?.type === "Task") {
+        const { tasksInColumn, taskPosition, column } = getDraggingTaskData(active.id, active.data.current.task.columnId);
         return `Task was dropped into position ${taskPosition + 1} of ${tasksInColumn.length} in column ${column?.title}`;
       }
       pickedUpTaskColumn.current = null;
@@ -133,99 +147,89 @@ export function KanbanBoard() {
     },
   };
 
-  function addColumn(title: string) {
-    const id = `col-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setColumns((cols) => [...cols, { id, title }]);
+
+  async function addColumn(title: string) {
+    try {
+      await db.addColumn(title);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao adicionar coluna");
+    }
   }
 
-  function removeColumn(id: ColumnId) {
-    setColumns((cols) => cols.filter((c) => c.id !== id));
-    setTasks((ts) => normalizeTasks(ts.filter((t) => t.columnId !== id), columnsId));
+  async function removeColumn(id: ColumnId) {
+    try {
+      await db.removeColumn(String(id));
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao remover coluna");
+    }
   }
 
-  function addTask(columnId: ColumnId, amount: number, dateISO?: string | null, isProjection: boolean = false) {
+  async function addTask(columnId: ColumnId, amount: number, dateISO?: string | null, isProjection: boolean = false) {
     if (isNaN(amount) || amount <= 0) {
       alert("Informe um valor maior que zero");
       return;
     }
-    const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const newTask: Task = { id, columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection } as Task;
-    setTasks((ts) => normalizeTasks([...ts, newTask], columnsId));
+    try {
+      await db.addTask({
+        columnId: columnId as string,
+        content: Math.round(amount * 100) / 100,
+        dateISO: dateISO ?? new Date().toISOString(),
+        isProjection,
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao adicionar cartão");
+    }
   }
 
-  function removeTask(taskId: string) {
-    setTasks((ts) => normalizeTasks(ts.filter((t) => t.id !== taskId), columnsId));
+  async function removeTask(taskId: string) {
+    try {
+      await db.removeTask(taskId);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao remover cartão");
+    }
   }
 
-  function transferTask(taskId: UniqueIdentifier, amount: number, targetColumnId: ColumnId, dateISO?: string | null) {
+  async function transferTask(taskId: UniqueIdentifier, amount: number, targetColumnId: ColumnId, dateISO?: string | null) {
     if (isNaN(amount) || amount <= 0) {
       alert("Informe um valor maior que zero para transferir");
       return;
     }
-
-    setTasks((ts) => {
-      const idx = ts.findIndex((t) => t.id === taskId);
-      if (idx === -1) return ts;
-
-      const source = ts[idx];
-      const transferAmount = Math.round(amount * 100) / 100;
-      if (transferAmount > source.content) {
-        alert("Valor de transferência maior que o disponível no cartão");
-        return ts;
-      }
-
-      const updated = ts.slice();
-
-      //decrease the original card size, if it reaches 0 => remove
-      const remaining = Math.round((source.content - transferAmount) * 100) / 100;
-      if (remaining <= 0) {
-        updated.splice(idx, 1);
-      } else {
-        updated[idx] = { ...source, content: remaining };
-      }
-
-      // create a new card with the transferred amount in the destination column
-      const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const newTask: Task = {
-        id: newId,
-        columnId: targetColumnId as string,
-        content: transferAmount,
-        dateISO: dateISO ?? new Date().toISOString(),
-        isProjection: source.isProjection ?? false,
-      };
-
-      updated.push(newTask);
-
-      return normalizeTasks(updated, columnsId);
-    });
+    try {
+      await db.transferTask(String(taskId), amount, String(targetColumnId), dateISO);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message ?? "Erro ao transferir");
+    }
   }
 
-  function toggleProjection(taskId: UniqueIdentifier) {
-    setTasks((ts) => {
-      const idx = ts.findIndex((t) => t.id === taskId);
-      if (idx === -1) return ts;
-      const updated = ts.slice();
-      updated[idx] = { ...updated[idx], isProjection: false };
-      return normalizeTasks(updated, columnsId);
-    });
+  async function toggleProjection(taskId: UniqueIdentifier) {
+    try {
+      await db.editTask(String(taskId), { isProjection: false });
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao alternar projeção");
+    }
   }
 
-  function editTask(taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection: boolean = false) {
+  async function editTask(taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection: boolean = false) {
     if (isNaN(amount) || amount <= 0) {
       alert("Informe um valor maior que zero");
       return;
     }
-
-    setTasks((ts) => {
-      const idx = ts.findIndex((t) => t.id === taskId);
-      if (idx === -1) return ts;
-      const updated = ts.slice();
-      const normalizedDateISO = dateISO ? new Date(dateISO).toISOString() : new Date().toISOString();
-      // round amount to 2 decimals
-      const rounded = Math.round(amount * 100) / 100;
-      updated[idx] = { ...updated[idx], content: rounded, dateISO: normalizedDateISO, isProjection };
-      return normalizeTasks(updated, columnsId);
-    });
+    try {
+      await db.editTask(String(taskId), {
+        content: Math.round(amount * 100) / 100,
+        dateISO: dateISO ?? new Date().toISOString(),
+        isProjection,
+      });
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao editar cartão");
+    }
   }
 
   return (
@@ -323,12 +327,20 @@ export function KanbanBoard() {
     const isActiveAColumn = activeData?.type === "Column";
     if (!isActiveAColumn) return;
 
+    // local reorder for immediate feedback
     setColumns((columns) => {
       const activeColumnIndex = columns.findIndex((col) => col.id === activeId);
-
       const overColumnIndex = columns.findIndex((col) => col.id === overId);
 
-      return arrayMove(columns, activeColumnIndex, overColumnIndex);
+      const newCols = arrayMove(columns, activeColumnIndex, overColumnIndex);
+
+      // persist order to DB
+      const newOrder = newCols.map((c) => c.id);
+      db.updateColumnsOrder(newOrder).catch((e) => {
+        console.error("fail updateColumnsOrder", e);
+      });
+
+      return newCols;
     });
   }
 
@@ -353,37 +365,19 @@ export function KanbanBoard() {
 
     // dropping a Task over another Task
     if (isActiveATask && isOverATask) {
-      setTasks((tasks) => {
-        const activeIndex = tasks.findIndex((t) => t.id === activeId);
-        const overIndex = tasks.findIndex((t) => t.id === overId);
-        const activeTask = tasks[activeIndex];
-        const overTask = tasks[overIndex];
-        let newTasks = tasks.slice();
-        if (activeTask && overTask && activeTask.columnId !== overTask.columnId) {
-          const updatedActive = { ...activeTask, columnId: overTask.columnId };
-          newTasks[activeIndex] = updatedActive;
-          newTasks = arrayMove(newTasks, activeIndex, overIndex - 1);
-        } else {
-          newTasks = arrayMove(newTasks, activeIndex, overIndex);
-        }
-        return normalizeTasks(newTasks, columnsId);
-      });
+      // if changing column, update task columnId & dateISO so it appears properly ordered
+      if (overData.task.columnId !== activeData.task.columnId) {
+        const nowISO = new Date().toISOString();
+        db.editTask(String(activeId), { columnId: String(overData.task.columnId), dateISO: nowISO }).catch(console.error);
+      }
     }
 
     const isOverAColumn = overData?.type === "Column";
 
     // dropping a Task over a column
     if (isActiveATask && isOverAColumn) {
-      setTasks((tasks) => {
-        const activeIndex = tasks.findIndex((t) => t.id === activeId);
-        const activeTask = tasks[activeIndex];
-        if (activeTask) {
-          const updated = tasks.slice();
-          updated[activeIndex] = { ...activeTask, columnId: overId as ColumnId };
-          return normalizeTasks(updated, columnsId);
-        }
-        return tasks;
-      });
+      const nowISO = new Date().toISOString();
+      db.editTask(String(activeId), { columnId: String(overId), dateISO: nowISO }).catch(console.error);
     }
   }
 }
