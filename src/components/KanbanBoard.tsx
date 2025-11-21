@@ -27,9 +27,16 @@ import * as db from "../lib/db";
 
 export type ColumnId = Column["id"] | string;
 
+const DEFAULT_COLUMNS: Column[] = [
+  { id: "col-1", title: "A Fazer" },
+  { id: "col-2", title: "Fazendo" },
+  { id: "col-3", title: "Feito" },
+];
+
 export function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [testMode, setTestMode] = useState(false);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
   const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
@@ -44,49 +51,267 @@ export function KanbanBoard() {
     })
   );
 
-  useEffect(() => {
-    const unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
-      setColumns(cols);
+  // local in-memory helpers for test mode
+  function uid(prefix = "id") {
+    return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  }
 
-      const mappedTasks: Task[] = ts.map((t) => ({
-        id: t.id,
-        columnId: t.columnId,
-        content: typeof t.content === "number" ? t.content : Number(t.content) || 0,
-        dateISO: t.dateISO ?? undefined,
-        isProjection: !!t.isProjection,
-      }));
-      setTasks(mappedTasks);
+  function round2(n: number) {
+    return Math.round(n * 100) / 100;
+  }
+
+  function enterTestMode() {
+    console.warn("Entering test mode: Firestore inaccessible. Data will not be saved.");
+    setTestMode(true);
+    // initialize sensible defaults so the app remains usable
+    setColumns(DEFAULT_COLUMNS);
+    setTasks([]);
+    // Note: we intentionally do not persist anything to any backend
+  }
+
+  // local operations mirror the db.* API used in this component
+  function localAddColumn(title: string) {
+    const newCol: Column = { id: uid("col"), title };
+    setColumns((c) => [...c, newCol]);
+  }
+
+  function localRemoveColumn(id: string) {
+    setColumns((cols) => cols.filter((c) => c.id !== id));
+    setTasks((ts) => ts.filter((t) => t.columnId !== id));
+  }
+
+  function localAddTask(payload: { columnId: string; content: number; dateISO: string; isProjection?: boolean }) {
+    const newTask: Task = {
+      id: uid("task"),
+      columnId: payload.columnId,
+      content: round2(payload.content),
+      dateISO: payload.dateISO,
+      isProjection: !!payload.isProjection,
+    };
+    setTasks((ts) => [...ts, newTask]);
+  }
+
+  function localRemoveTask(taskId: string) {
+    setTasks((ts) => ts.filter((t) => t.id !== taskId));
+  }
+
+  function localTransferTask(taskId: string, amount: number, targetColumnId: string, dateISO?: string | null) {
+    setTasks((ts) => {
+      const tasksCopy = ts.slice();
+      const idx = tasksCopy.findIndex((t) => t.id === taskId);
+      const nowISO = dateISO ?? new Date().toISOString();
+      if (idx === -1) {
+        // just create a new task in target
+        tasksCopy.push({ id: uid("task"), columnId: targetColumnId, content: round2(amount), dateISO: nowISO, isProjection: false });
+        return tasksCopy;
+      }
+      const original = { ...tasksCopy[idx] };
+      // subtract amount from original, remove if <= 0
+      const remaining = round2(Number(original.content) - amount);
+      if (remaining > 0) {
+        tasksCopy[idx] = { ...original, content: remaining };
+      } else {
+        tasksCopy.splice(idx, 1);
+      }
+      // create new task in target
+      tasksCopy.push({ id: uid("task"), columnId: targetColumnId, content: round2(amount), dateISO: nowISO, isProjection: false });
+      return tasksCopy;
     });
+  }
+
+  function localEditTask(taskId: string, patch: Partial<{ content: number; dateISO: string | null; columnId: string; isProjection: boolean }>) {
+    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, ...(patch.content !== undefined ? { content: round2(patch.content) } : {}), ...(patch.dateISO !== undefined ? { dateISO: patch.dateISO ?? undefined } : {}), ...(patch.columnId ? { columnId: patch.columnId } : {}), ...(patch.isProjection !== undefined ? { isProjection: !!patch.isProjection } : {}) } : t)));
+  }
+
+  function localUpdateColumnsOrder(newOrder: UniqueIdentifier[]) {
+    setColumns((cols) => {
+      const map = new Map(cols.map((c) => [c.id, c]));
+      return newOrder.map((id) => map.get(id)).filter(Boolean) as Column[];
+    });
+  }
+
+  // subscribe to DB (or fall back to test-mode)
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    try {
+      // try to subscribe using the external db implementation
+      unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
+        setColumns(cols);
+
+        const mappedTasks: Task[] = ts.map((t) => ({
+          id: t.id,
+          columnId: t.columnId,
+          content: typeof t.content === "number" ? t.content : Number(t.content) || 0,
+          dateISO: t.dateISO ?? undefined,
+          isProjection: !!t.isProjection,
+        }));
+        setTasks(mappedTasks);
+      });
+
+    } catch (err) {
+      console.error("Failed to connect to Firestore, entering test mode:", err);
+      enterTestMode();
+    }
 
     return () => {
-      unsub();
+      try {
+        if (unsub) unsub();
+      } catch (e) {
+        console.error("Error clearing subscription:", e);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // function normalizeTasks(inputTasks: Task[], colsOrder: ColumnId[]) {
-  //   const byColumn: Task[] = [];
-  //   for (const colId of colsOrder) {
-  //     const tasksForCol = inputTasks
-  //       .filter((t) => t.columnId === colId)
-  //       .slice()
-  //       .sort((a, b) => {
-  //         const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
-  //         const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
-  //         return tb - ta;
-  //       });
-  //     byColumn.push(...tasksForCol);
-  //   }
+  // helpers that try real DB first, but fall back to test-mode on error
+  async function addColumn(title: string) {
+    if (testMode) {
+      localAddColumn(title);
+      return;
+    }
+    try {
+      await db.addColumn(title);
+    } catch (err) {
+      console.error(err);
+      // switch to test-mode and apply change locally so the user can keep working
+      enterTestMode();
+      localAddColumn(title);
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
 
-  //   // fallback
-  //   const remaining = inputTasks.filter((t) => !colsOrder.includes(t.columnId));
-  //   remaining.sort((a, b) => {
-  //     const ta = a.dateISO ? new Date(a.dateISO).getTime() : 0;
-  //     const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
-  //     return tb - ta;
-  //   });
-  //   byColumn.push(...remaining);
-  //   return byColumn;
-  // }
+  async function removeColumn(id: ColumnId) {
+    if (testMode) {
+      localRemoveColumn(String(id));
+      return;
+    }
+    try {
+      await db.removeColumn(String(id));
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localRemoveColumn(String(id));
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function addTask(columnId: ColumnId, amount: number, dateISO?: string | null, isProjection: boolean = false) {
+    if (isNaN(amount) || amount <= 0) {
+      alert("Informe um valor maior que zero");
+      return;
+    }
+
+    if (testMode) {
+      localAddTask({ columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection });
+      return;
+    }
+
+    try {
+      await db.addTask({
+        columnId: columnId as string,
+        content: Math.round(amount * 100) / 100,
+        dateISO: dateISO ?? new Date().toISOString(),
+        isProjection,
+      });
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localAddTask({ columnId: columnId as string, content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection });
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function removeTask(taskId: string) {
+    if (testMode) {
+      localRemoveTask(taskId);
+      return;
+    }
+    try {
+      await db.removeTask(taskId);
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localRemoveTask(taskId);
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function transferTask(taskId: UniqueIdentifier, amount: number, targetColumnId: ColumnId, dateISO?: string | null) {
+    if (isNaN(amount) || amount <= 0) {
+      alert("Informe um valor maior que zero para transferir");
+      return;
+    }
+
+    if (testMode) {
+      localTransferTask(String(taskId), amount, String(targetColumnId), dateISO);
+      return;
+    }
+
+    try {
+      await db.transferTask(String(taskId), amount, String(targetColumnId), dateISO);
+    } catch (err: any) {
+      console.error(err);
+      enterTestMode();
+      localTransferTask(String(taskId), amount, String(targetColumnId), dateISO);
+      alert(err?.message ?? "Erro ao transferir. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function toggleProjection(taskId: UniqueIdentifier) {
+    if (testMode) {
+      localEditTask(String(taskId), { isProjection: false });
+      return;
+    }
+    try {
+      await db.editTask(String(taskId), { isProjection: false });
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localEditTask(String(taskId), { isProjection: false });
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function editTask(taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection: boolean = false) {
+    if (isNaN(amount) || amount <= 0) {
+      alert("Informe um valor maior que zero");
+      return;
+    }
+
+    if (testMode) {
+      localEditTask(String(taskId), { content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection });
+      return;
+    }
+
+    try {
+      await db.editTask(String(taskId), {
+        content: Math.round(amount * 100) / 100,
+        dateISO: dateISO ?? new Date().toISOString(),
+        isProjection,
+      });
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localEditTask(String(taskId), { content: amount, dateISO: dateISO ?? new Date().toISOString(), isProjection });
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
+  async function updateColumnsOrder(newOrder: UniqueIdentifier[]) {
+    if (testMode) {
+      localUpdateColumnsOrder(newOrder);
+      return;
+    }
+    try {
+      await db.updateColumnsOrder(newOrder);
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      localUpdateColumnsOrder(newOrder);
+      // keep silent to avoid spamming alerts on reorder, but log
+      console.warn("Falha ao atualizar ordem das colunas no Firestore. Modo de teste ativado.");
+    }
+  }
 
   function getDraggingTaskData(taskId: UniqueIdentifier, columnId: ColumnId) {
     const tasksInColumn = tasks.filter((task) => task.columnId === columnId);
@@ -147,91 +372,6 @@ export function KanbanBoard() {
     },
   };
 
-
-  async function addColumn(title: string) {
-    try {
-      await db.addColumn(title);
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao adicionar coluna");
-    }
-  }
-
-  async function removeColumn(id: ColumnId) {
-    try {
-      await db.removeColumn(String(id));
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao remover coluna");
-    }
-  }
-
-  async function addTask(columnId: ColumnId, amount: number, dateISO?: string | null, isProjection: boolean = false) {
-    if (isNaN(amount) || amount <= 0) {
-      alert("Informe um valor maior que zero");
-      return;
-    }
-    try {
-      await db.addTask({
-        columnId: columnId as string,
-        content: Math.round(amount * 100) / 100,
-        dateISO: dateISO ?? new Date().toISOString(),
-        isProjection,
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao adicionar cartão");
-    }
-  }
-
-  async function removeTask(taskId: string) {
-    try {
-      await db.removeTask(taskId);
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao remover cartão");
-    }
-  }
-
-  async function transferTask(taskId: UniqueIdentifier, amount: number, targetColumnId: ColumnId, dateISO?: string | null) {
-    if (isNaN(amount) || amount <= 0) {
-      alert("Informe um valor maior que zero para transferir");
-      return;
-    }
-    try {
-      await db.transferTask(String(taskId), amount, String(targetColumnId), dateISO);
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.message ?? "Erro ao transferir");
-    }
-  }
-
-  async function toggleProjection(taskId: UniqueIdentifier) {
-    try {
-      await db.editTask(String(taskId), { isProjection: false });
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao alternar projeção");
-    }
-  }
-
-  async function editTask(taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection: boolean = false) {
-    if (isNaN(amount) || amount <= 0) {
-      alert("Informe um valor maior que zero");
-      return;
-    }
-    try {
-      await db.editTask(String(taskId), {
-        content: Math.round(amount * 100) / 100,
-        dateISO: dateISO ?? new Date().toISOString(),
-        isProjection,
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Erro ao editar cartão");
-    }
-  }
-
   return (
     <DndContext
       accessibility={{ announcements }}
@@ -240,6 +380,12 @@ export function KanbanBoard() {
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
     >
+      {testMode && (
+        <div className="mb-2 px-3 py-2 rounded bg-yellow-100 text-yellow-800 border border-yellow-200 text-sm">
+          <strong>Modo de teste:</strong> o Firestore não está acessível. Os dados não serão salvos quando fechar a janela.
+        </div>
+      )}
+
       {/* top toolbar to add a column */}
       <div className="flex gap-2 items-center mb-4">
         <AddColumnForm onAdd={addColumn} />
@@ -334,9 +480,9 @@ export function KanbanBoard() {
 
       const newCols = arrayMove(columns, activeColumnIndex, overColumnIndex);
 
-      // persist order to DB
+      // persist order to DB (or local fallback)
       const newOrder = newCols.map((c) => c.id);
-      db.updateColumnsOrder(newOrder).catch((e) => {
+      updateColumnsOrder(newOrder).catch((e) => {
         console.error("fail updateColumnsOrder", e);
       });
 
@@ -363,12 +509,33 @@ export function KanbanBoard() {
 
     if (!isActiveATask) return;
 
+    async function updateTaskColumn(taskId: UniqueIdentifier, targetColumnId: ColumnId, dateISO?: string | null) {
+      const patch: any = { columnId: String(targetColumnId) };
+      if (dateISO) patch.dateISO = dateISO;
+
+      if (testMode) {
+        localEditTask(String(taskId), { columnId: String(targetColumnId), dateISO: dateISO ?? undefined });
+        return;
+      }
+
+      try {
+        await db.editTask(String(taskId), patch);
+      } catch (e) {
+        console.error('failed to edit task column, switching to test mode', e);
+        enterTestMode();
+        localEditTask(String(taskId), { columnId: String(targetColumnId), dateISO: dateISO ?? undefined });
+      }
+    }
+
     // dropping a Task over another Task
     if (isActiveATask && isOverATask) {
-      // if changing column, update task columnId & dateISO so it appears properly ordered
+      // if changing column, update task columnId
       if (overData.task.columnId !== activeData.task.columnId) {
-        const nowISO = new Date().toISOString();
-        db.editTask(String(activeId), { columnId: String(overData.task.columnId), dateISO: nowISO }).catch(console.error);
+        updateTaskColumn(
+          activeId,
+          overData.task.columnId,
+          activeData.task.dateISO ?? new Date().toISOString()
+        );
       }
     }
 
@@ -376,8 +543,11 @@ export function KanbanBoard() {
 
     // dropping a Task over a column
     if (isActiveATask && isOverAColumn) {
-      const nowISO = new Date().toISOString();
-      db.editTask(String(activeId), { columnId: String(overId), dateISO: nowISO }).catch(console.error);
+      updateTaskColumn(
+        activeId,
+        overId,
+        activeData.task.dateISO ?? new Date().toISOString()
+      );
     }
   }
 }
