@@ -1,5 +1,6 @@
 // File: TaskCard.tsx
 
+import { useEffect, useState } from "react";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -7,6 +8,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cva } from "class-variance-authority";
 import { ColumnId } from "./KanbanBoard";
 import { Badge } from "./ui/badge";
+import { GripVertical } from "lucide-react";
+import { Button } from "./ui/button";
 
 export interface Task {
   id: UniqueIdentifier;
@@ -28,7 +31,22 @@ export interface TaskDragData {
   task: Task;
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  return isMobile;
+}
+
 export function TaskCard({ task, isOverlay }: TaskCardProps) {
+  const isMobile = useIsMobile();
+
   const {
     setNodeRef,
     attributes,
@@ -38,19 +56,11 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     isDragging,
   } = useSortable({
     id: task.id,
-    data: {
-      type: "Task",
-      task,
-    } satisfies TaskDragData,
-    attributes: {
-      roleDescription: "Task",
-    },
+    data: { type: "Task", task },
+    attributes: { roleDescription: "Task" },
   });
 
-  const style = {
-    transition,
-    transform: CSS.Translate.toString(transform),
-  };
+  const style = { transition, transform: CSS.Translate.toString(transform) };
 
   const variants = cva("", {
     variants: {
@@ -81,15 +91,27 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
         ${task.isProjection ? "opacity-60" : ""}
       `}
     >
+
       <CardHeader
-        {...attributes}
-        {...listeners}
-        className="px-3 py-3 border-b-2 border-secondary relative cursor-grab"
+        className="p-3 border-b-2 border-secondary relative"
+        {...(!isMobile ? { ...attributes, ...listeners, className: "p-3 border-b-2 border-secondary relative cursor-grab" } : {})}
       >
 
         <div className="flex">
 
-          <div className="text-xl">{formattedAmount}</div>
+          {isMobile && (
+            <Button
+              variant="ghost"
+              {...attributes}
+              {...listeners}
+              className="absolute left-2 top-2 p-1.5 text-secondary-foreground/50 h-auto cursor-grab"
+            >
+              <span className="sr-only">Mover tarefa</span>
+              <GripVertical />
+            </Button>
+          )}
+
+          <div className={`text-xl ${isMobile ? "ml-10" : ""}`}>{formattedAmount}</div>
 
           <Badge variant={"outline"} className="ml-auto font-semibold h-6">
             {task.isProjection ? "Projeção" : "Saldo"}

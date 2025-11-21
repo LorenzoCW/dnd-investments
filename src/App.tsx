@@ -8,7 +8,7 @@ function App() {
       <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
         <div className="h-screen flex flex-col w-full">
 
-          <main className="h-screen mx-4 flex flex-col gap-6">
+          <main className="h-screen mx-4 flex flex-col gap-3 lg:gap-6">
             <h1 className="scroll-m-20 text-4xl font-extrabold tracking-tight lg:text-5xl">
               DnD Investments
             </h1>

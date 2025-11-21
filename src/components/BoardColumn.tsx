@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit } from "lucide-react";
+import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit, Trash } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 
 export interface Column {
@@ -598,7 +598,7 @@ export function BoardColumn({
   const style = { transition, transform: CSS.Translate.toString(transform) };
 
   const variants = cva(
-    "h-[750px] max-h-[750px] w-[350px] max-w-full bg-primary-foreground flex flex-col flex-shrink-0 snap-center",
+    "h-[530px] lg:h-[750px] max-h-[750px] w-[300px] lg:w-[340px] max-w-full bg-primary-foreground flex flex-col flex-shrink-0 snap-center",
     {
       variants: {
         dragging: {
@@ -669,7 +669,7 @@ export function BoardColumn({
       <CardHeader
         {...attributes}
         {...listeners}
-        className="p-4 font-semibold border-b-2 flex flex-row justify-between cursor-grab"
+        className="px-3 py-5 font-semibold border-b-2 flex flex-row justify-between cursor-grab"
       >
 
         <div className="flex items-center">
@@ -756,7 +756,7 @@ export function BoardColumn({
                       onClick={() => handleOpenDeleteCardModal(task)}
                       aria-label={`Remover cartão ${task.content}`}
                     >
-                      <X size={14} />
+                      <Trash size={14} />
                     </button>
                   )}
                 </div>

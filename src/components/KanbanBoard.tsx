@@ -387,7 +387,7 @@ export function KanbanBoard() {
       )}
 
       {/* top toolbar to add a column */}
-      <div className="flex gap-2 items-center mb-4">
+      <div className="flex gap-2 items-center justify-center lg:mb-4">
         <AddColumnForm onAdd={addColumn} />
       </div>
 
@@ -563,15 +563,15 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
         onAdd(trimmed);
         setValue("");
       }}
-      className="flex gap-2 w-full justify-center"
+      className="flex gap-2 w-1/2 lg:w-full justify-center mx-1"
     >
       <input
-        className="border rounded px-2 py-1"
+        className="border rounded px-0 lg:px-2 py-1"
         value={value}
         maxLength={18}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="submit" className="px-3 py-1 rounded bg-sky-700 text-white hover:ring ring-sky-700 transition-all duration-300 cursor-pointer">
+      <button type="submit" className="text-xs lg:text-base px-3 py-1 rounded bg-sky-700 text-white hover:ring ring-sky-700 transition-all duration-300 cursor-pointer">
         Adicionar investimento
       </button>
     </form>
