@@ -119,7 +119,13 @@ function parseCurrencyInput(input: string): number {
   return n;
 }
 
-function AddCardForm({ onCancel, onAdd }: { onCancel: () => void; onAdd: (amount: number, dateISO?: string | null, isProjection?: boolean) => void }) {
+function AddCardForm({
+  onCancel,
+  onAdd
+}: {
+  onCancel: () => void; onAdd: (amount: number, dateISO?: string | null, isProjection?: boolean) => void
+}) {
+
   const [amountText, setAmountText] = useState("");
   const [dateTimeLocal, setDateTimeLocal] = useState<string>(toLocalDateTimeInputValue());
   const [isProjection, setIsProjection] = useState(false);
@@ -322,7 +328,7 @@ function EditCardForm({
   );
 }
 
-function ConfirmationModal({
+function DeleteModal({
   message,
   onConfirm,
   onCancel,
@@ -352,7 +358,7 @@ function ConfirmationModal({
   );
 }
 
-function MetaModal({
+function ProjectionModal({
   onClose,
   onCreate,
 }: {
@@ -370,6 +376,8 @@ function MetaModal({
   const [endMonthNum, setEndMonthNum] = useState<string>(String(defaultMonthNum));
   const [endYear, setEndYear] = useState<string>(String(defaultYear));
   const [dayNum, setDayNum] = useState<string>("1");
+
+  const valueInputRef = useRef<HTMLInputElement>(null);
 
   function buildISO(monthStr: string, yearStr: string) {
     const m = Number(monthStr);
@@ -432,14 +440,19 @@ function MetaModal({
 
   const formatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  useEffect(() => {
+    valueInputRef.current?.focus();
+  }, []);
+
   return (
     <Modal onClose={onClose}>
       <div>
         <h3 className="text-xl font-semibold mb-3">Criar projeção</h3>
         <div className="space-y-3">
           <div>
-            <label className="block text-sm">Valor total da meta</label>
+            <label className="block text-sm">Valor total da projeção</label>
             <input
+              ref={valueInputRef}
               type="number"
               value={valueText}
               onChange={(e) => setValueText(e.target.value)}
@@ -500,6 +513,124 @@ function MetaModal({
   );
 }
 
+function TransferModal({
+  task,
+  columns,
+  currentColumnId,
+  onClose,
+  onConfirm,
+}: {
+  task: Task;
+  columns: Column[];
+  currentColumnId: UniqueIdentifier;
+  onClose: () => void;
+  onConfirm: (amount: number, targetColumnId: UniqueIdentifier, dateISO?: string | null) => void;
+}) {
+  const [amount, setAmount] = useState(Math.min(task.content, Math.floor(task.content)));
+  const [targetColumnId, setTargetColumnId] = useState<UniqueIdentifier>(currentColumnId);
+  const [dateTimeLocal, setDateTimeLocal] = useState(toLocalDateTimeInputValue());
+
+  const amountInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    amountInputRef.current?.focus();
+  }, []);
+
+  return (
+    <Modal onClose={onClose}>
+      <div>
+        <h3 className="text-xl font-semibold mb-3">Transferir valor</h3>
+
+        <div className="space-y-3">
+
+          <div className="border border-slate-700 rounded-md text-sm flex justify-center gap-10 py-2">
+            <span>
+              <span className="text-neutral-400">Lista atual:</span> <span className="font-semibold">{columns.find(c => c.id === currentColumnId)?.title}</span>
+            </span>
+            <span>
+              <span className="text-neutral-400">Valor disponível:</span> <span className="font-semibold">R$ {task.content.toFixed(2)}</span>
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-sm">Lista de destino</label>
+            <select
+              value={targetColumnId}
+              onChange={(e) => setTargetColumnId(e.target.value)}
+              className="w-full px-3 py-2 rounded border bg-white dark:bg-slate-800"
+            >
+              {columns.map((col) => (
+                <option key={col.id} value={col.id}>
+                  {col.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm">Valor a transferir</label>
+            <input
+              ref={amountInputRef}
+              type="number"
+              min={0.01}
+              step={0.01}
+              value={amount}
+              onChange={(e) => setAmount(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full px-3 py-2 rounded border"
+            />
+
+            <input
+              type="range"
+              min={0}
+              max={task.content}
+              step={1}
+              value={amount}
+              onChange={(e) => setAmount(Math.min(task.content, Number(e.target.value)))}
+              className="w-full mt-2"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm">Data e hora</label>
+            <input
+              type="datetime-local"
+              step={1}
+              value={dateTimeLocal}
+              onChange={(e) => setDateTimeLocal(e.target.value)}
+              className="w-full px-3 py-2 rounded border"
+            />
+          </div>
+
+          <div className="flex gap-2 justify-end mt-4">
+            <button
+              onClick={onClose}
+              className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer"
+            >
+              Cancelar
+            </button>
+
+            <button
+              onClick={() => {
+                if (amount <= 0) return alert("Informe um valor maior que zero");
+                if (amount > task.content) return alert("Valor maior do que o disponível");
+
+                const dateISO = dateTimeLocal
+                  ? new Date(dateTimeLocal).toISOString()
+                  : null;
+
+                onConfirm(amount, targetColumnId, dateISO);
+              }}
+              className="px-3 py-2 rounded bg-indigo-600 text-white hover:ring ring-indigo-600 transition-all duration-300 cursor-pointer"
+            >
+              Transferir
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function BoardColumn({
   column,
   tasks,
@@ -517,7 +648,7 @@ export function BoardColumn({
   const [isDeleteListOpen, setIsDeleteListOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isMetaOpen, setIsMetaOpen] = useState(false);
+  const [isProjectionOpen, setIsProjectionOpen] = useState(false);
 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: column.id,
@@ -688,7 +819,7 @@ export function BoardColumn({
             </Button>
           )}
 
-          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsMetaOpen(true)} title="Criar projeção" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
+          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsProjectionOpen(true)} title="Criar projeção" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
             <CalendarCheck size={16} />
           </Button>
 
@@ -793,12 +924,12 @@ export function BoardColumn({
         </Modal>
       )}
 
-      {isMetaOpen && (
-        <MetaModal
-          onClose={() => setIsMetaOpen(false)}
+      {isProjectionOpen && (
+        <ProjectionModal
+          onClose={() => setIsProjectionOpen(false)}
           onCreate={(value, startMonthISO, endMonthISO, dayNumber) => {
             createProjections(value, startMonthISO, endMonthISO, dayNumber);
-            setIsMetaOpen(false);
+            setIsProjectionOpen(false);
           }}
         />
       )}
@@ -821,7 +952,10 @@ export function BoardColumn({
       )}
 
       {transferState.open && transferState.task && onTransferTask && (
-        <Modal
+        <TransferModal
+          task={transferState.task}
+          columns={allColumns ?? []}
+          currentColumnId={column.id}
           onClose={() =>
             setTransferState({
               open: false,
@@ -831,147 +965,22 @@ export function BoardColumn({
               dateTimeLocal: toLocalDateTimeInputValue(),
             })
           }
-        >
-          <div>
-            <h3 className="text-xl font-semibold mb-3">Transferir valor</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm">Cartão</label>
-                <div className="py-2 text-sm">{`${transferState.task.content.toFixed(
-                  2
-                )} — lista atual: ${column.title}`}</div>
-              </div>
+          onConfirm={(value, targetId, dateISO) => {
+            onTransferTask(transferState.task!.id, value, targetId, dateISO ?? undefined);
 
-              <div>
-                <label className="block text-sm">Lista de destino</label>
-                <select
-                  value={transferState.targetColumnId ?? column.id}
-                  onChange={(e) =>
-                    setTransferState((s) => ({
-                      ...s,
-                      targetColumnId: e.target.value,
-                    }))
-                  }
-                  className="w-full px-3 py-2 rounded border bg-white dark:bg-slate-800"
-                >
-                  {allColumns?.map((col) => (
-                    <option key={col.id} value={col.id}>
-                      {col.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm">Valor a transferir</label>
-                <input
-                  type="number"
-                  min={0.01}
-                  step={0.01}
-                  value={transferState.amount}
-                  onChange={(e) =>
-                    setTransferState((s) => ({
-                      ...s,
-                      amount: Math.max(0, Number(e.target.value) || 0),
-                    }))
-                  }
-                  className="w-full px-3 py-2 rounded border"
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={transferState.task.content}
-                  step={1}
-                  value={transferState.amount}
-                  onChange={(e) =>
-                    setTransferState((s) => ({
-                      ...s,
-                      amount: Math.min(
-                        transferState.task!.content,
-                        Number(e.target.value)
-                      ),
-                    }))
-                  }
-                  className="w-full mt-2"
-                />
-                <div className="text-xs mt-1">
-                  Disponível: {transferState.task.content.toFixed(2)}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm">Data e hora</label>
-                <input
-                  type="datetime-local"
-                  step={1}
-                  value={transferState.dateTimeLocal}
-                  onChange={(e) =>
-                    setTransferState((s) => ({ ...s, dateTimeLocal: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 rounded border"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() =>
-                    setTransferState({
-                      open: false,
-                      task: null,
-                      amount: 0,
-                      targetColumnId: column.id,
-                      dateTimeLocal: toLocalDateTimeInputValue(),
-                    })
-                  }
-                  className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  onClick={() => {
-                    const amt = transferState.amount;
-                    if (!transferState.task) return;
-                    if (!Number.isFinite(amt) || amt <= 0) {
-                      alert("Informe um valor maior que zero");
-                      return;
-                    }
-                    if (amt > transferState.task.content) {
-                      alert("Valor maior do que o disponível no cartão");
-                      return;
-                    }
-                    const targetId = transferState.targetColumnId ?? column.id;
-                    const dateISO = transferState.dateTimeLocal
-                      ? new Date(transferState.dateTimeLocal).toISOString()
-                      : undefined;
-
-                    onTransferTask(
-                      transferState.task.id,
-                      amt,
-                      targetId,
-                      dateISO ?? undefined
-                    );
-
-                    setTransferState({
-                      open: false,
-                      task: null,
-                      amount: 0,
-                      targetColumnId: column.id,
-                      dateTimeLocal: toLocalDateTimeInputValue(),
-                    });
-                  }}
-                  className="px-3 py-2 rounded bg-indigo-600 text-white hover:ring ring-indigo-600 transition-all duration-300 cursor-pointer"
-                >
-                  Transferir
-                </button>
-              </div>
-            </div>
-          </div>
-        </Modal>
+            setTransferState({
+              open: false,
+              task: null,
+              amount: 0,
+              targetColumnId: column.id,
+              dateTimeLocal: toLocalDateTimeInputValue(),
+            });
+          }}
+        />
       )}
 
       {isDeleteCardOpen && taskToDelete && (
-        <ConfirmationModal
+        <DeleteModal
           message={`Excluir o cartão "${taskToDelete.content}"?`}
           onConfirm={handleConfirmDeleteCard}
           onCancel={() => setIsDeleteCardOpen(false)}
@@ -979,7 +988,7 @@ export function BoardColumn({
       )}
 
       {isDeleteListOpen && (
-        <ConfirmationModal
+        <DeleteModal
           message={`Excluir a lista "${column.title}"? Isso removerá todos os cartões nela.`}
           onConfirm={handleConfirmDeleteColumn}
           onCancel={() => setIsDeleteListOpen(false)}
