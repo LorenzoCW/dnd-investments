@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
 import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit, Trash } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
+import { useModalHotkeys } from "@/hooks/useModalHotkeys";
 
 export interface Column {
   id: UniqueIdentifier;
@@ -141,22 +142,17 @@ function AddCardForm({
     }
   };
 
+  useModalHotkeys({
+    onCancel,
+    onConfirm: handleAdd,
+  });
+
   useEffect(() => {
     amountInputRef.current?.focus();
   }, []);
 
   return (
-    <div
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          handleAdd();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-    >
+    <div>
       <h3 className="text-xl font-semibold mb-3">Adicionar cartão</h3>
       <div className="space-y-3">
         <div>
@@ -251,22 +247,17 @@ function EditCardForm({
     }
   };
 
+  useModalHotkeys({
+    onCancel,
+    onConfirm: handleSave,
+  });
+
   useEffect(() => {
     amountInputRef.current?.focus();
   }, []);
 
   return (
-    <div
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          handleSave();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        }
-      }}
-    >
+    <div>
       <h3 className="text-xl font-semibold mb-3">Editar cartão</h3>
       <div className="space-y-3">
         <div>
@@ -337,6 +328,12 @@ function DeleteModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+
+  useModalHotkeys({
+    onCancel,
+    onConfirm,
+  });
+
   return (
     <Modal onClose={onCancel}>
       <div>
@@ -384,7 +381,7 @@ function ProjectionModal({
     const y = Number(yearStr);
     if (!Number.isFinite(m) || !Number.isFinite(y)) return null;
     const mm = String(m).padStart(2, "0");
-    return `${y}-${mm}`; // YYYY-MM
+    return `${y}-${mm}`;
   }
 
   function computePreview(value: number, startISO: string | null, endISO: string) {
@@ -440,13 +437,28 @@ function ProjectionModal({
 
   const formatter = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  useModalHotkeys({
+    onCancel() { },
+    onConfirm: handleCreate,
+  });
+
   useEffect(() => {
     valueInputRef.current?.focus();
   }, []);
 
   return (
     <Modal onClose={onClose}>
-      <div>
+      <div
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            handleCreate();
+          }
+        }}
+      >
         <h3 className="text-xl font-semibold mb-3">Criar projeção</h3>
         <div className="space-y-3">
           <div>
@@ -531,6 +543,20 @@ function TransferModal({
   const [dateTimeLocal, setDateTimeLocal] = useState(toLocalDateTimeInputValue());
 
   const amountInputRef = useRef<HTMLInputElement>(null);
+
+  useModalHotkeys({
+    onCancel: onClose,
+    onConfirm: () => {
+      if (amount <= 0) return alert("Informe um valor maior que zero");
+      if (amount > task.content) return alert("Valor maior do que o disponível");
+
+      const dateISO = dateTimeLocal
+        ? new Date(dateTimeLocal).toISOString()
+        : null;
+
+      onConfirm(amount, targetColumnId, dateISO);
+    },
+  });
 
   useEffect(() => {
     amountInputRef.current?.focus();
