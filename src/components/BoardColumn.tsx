@@ -385,7 +385,7 @@ function ProjectionModal({
   }
 
   function computePreview(value: number, startISO: string | null, endISO: string) {
-    // returns array of amounts and last amount
+    // returns array of amounts (with cents) where first N-1 are equal and last may differ
     try {
       const startParts = (startISO ?? `${defaultYear}-${String(defaultMonthNum).padStart(2, "0")}`).split("-");
       const endParts = endISO.split("-");
@@ -396,11 +396,17 @@ function ProjectionModal({
 
       const monthsCount = (endY - startY) * 12 + (endM - startM) + 1; // inclusive
       if (!monthsCount || monthsCount <= 0) return null;
-      const base = Math.floor((value / monthsCount) * 100) / 100;
+      // base in cents to avoid floating errors
+      const totalCents = Math.round(value * 100);
+      const baseCents = Math.floor(totalCents / monthsCount);
       const amounts: number[] = [];
       for (let i = 0; i < monthsCount; i++) {
-        const amt = i < monthsCount - 1 ? base : Math.round((value - base * (monthsCount - 1)) * 100) / 100;
-        amounts.push(amt);
+        if (i < monthsCount - 1) {
+          amounts.push(baseCents / 100);
+        } else {
+          const lastCents = totalCents - baseCents * (monthsCount - 1);
+          amounts.push(lastCents / 100);
+        }
       }
       return amounts;
     } catch (e) {
@@ -499,17 +505,92 @@ function ProjectionModal({
             <input type="number" min={1} max={31} value={dayNum} onChange={(e) => setDayNum(e.target.value)} className="w-full px-3 py-2 rounded border" />
           </div>
 
-          {previewAmounts && (
-            <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded">
-              <div className="text-sm font-medium mb-1">Pré-visualização das parcelas</div>
-              <div className="text-sm">
-                {previewAmounts.map((a, idx) => (
-                  <div key={idx}>{`Parcela ${idx + 1}: ${formatter.format(a)}`}</div>
-                ))}
-                <div className="mt-2 text-xs text-gray-500">Total parcelas: {previewAmounts.length} — última parcela: {formatter.format(previewAmounts[previewAmounts.length - 1])}</div>
-              </div>
+
+          <div>
+            <div className="text-sm">Pré-visualização das parcelas</div>
+
+            <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded h-52">
+              {previewAmounts && (
+                <div>
+                  {(() => {
+                    const monthsCount = previewAmounts.length;
+                    const totalCents = (() => {
+                      try {
+                        return Math.round(parseCurrencyInput(valueText) * 100);
+                      } catch (e) {
+                        return null;
+                      }
+                    })();
+
+                    if (monthsCount <= 0) return null;
+
+                    // check if total is exactly divisible into cents
+                    const divisibleIntoEqualCents = totalCents !== null && (totalCents % monthsCount === 0);
+
+                    if (divisibleIntoEqualCents) {
+                      const installmentCents = Math.round((totalCents as number) / monthsCount);
+                      const installment = installmentCents / 100;
+                      return (
+                        <div>
+                          <div>Total de parcelas: {monthsCount}</div>
+                          <div className="mt-2 font-semibold">{monthsCount}x de {formatter.format(installment)}</div>
+                        </div>
+                      );
+                    }
+
+                    // otherwise show grouped (first N-1 + last) and round option
+                    const firstValue = previewAmounts[0];
+                    const lastValue = previewAmounts[previewAmounts.length - 1];
+                    const firstCount = previewAmounts.length - 1;
+
+                    // compute rounded-up equal installment and new total (ceil to cents)
+                    const valueNum = (() => {
+                      try { return parseCurrencyInput(valueText); } catch { return null; }
+                    })();
+
+                    let ceilInstallment = null as number | null;
+                    let newTotal = null as number | null;
+                    if (valueNum !== null) {
+                      const cents = Math.round(valueNum * 100);
+                      const ceilInstallmentCents = Math.ceil(cents / monthsCount);
+                      ceilInstallment = ceilInstallmentCents / 100;
+                      newTotal = Math.round(ceilInstallment * monthsCount * 100) / 100;
+                    }
+
+                    return (
+                      <div>
+                        <div>Total de parcelas: {monthsCount}</div>
+
+                        {firstCount > 0 && (
+                          <div className="mt-2 font-semibold">{firstCount}x de {formatter.format(firstValue)}</div>
+                        )}
+
+                        <div className="text-center">+</div>
+
+                        <div className="font-semibold">1x de {formatter.format(lastValue)}</div>
+
+                        {newTotal !== null && (
+                          <div className="mt-8 items-center justify-center">
+                            <button
+                              onClick={() => {
+                                // set the value text to the new rounded total so the form shows equal installments
+                                setValueText((newTotal as number).toFixed(2));
+                              }}
+                              className="px-2 py-1 rounded bg-blue-800 text-white hover:ring ring-blue-800 transition-all duration-200"
+                            >
+                              Arredondar
+                            </button>
+
+                            <div className="text-sm text-gray-500 mt-1">{monthsCount}x de {formatter.format(ceilInstallment as number)} = {formatter.format(newTotal as number)}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
           <div className="flex gap-2 justify-end mt-4">
             <button onClick={onClose} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
