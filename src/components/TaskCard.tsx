@@ -93,7 +93,6 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     >
 
       <CardHeader
-        className="p-3 border-b-2 border-secondary relative"
         {...(!isMobile ? { ...attributes, ...listeners, className: "p-3 border-b-2 border-secondary relative cursor-grab" } : {})}
       >
 
