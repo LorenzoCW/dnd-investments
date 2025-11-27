@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "../components/ui/card";
 import { cva } from "class-variance-authority";
 import { ColumnId } from "./KanbanBoard";
 import { Badge } from "./ui/badge";

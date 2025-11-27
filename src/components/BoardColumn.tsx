@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
 import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit, Trash } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
-import { useModalHotkeys } from "@/hooks/useModalHotkeys";
+import { useModalHotkeys } from "../hooks/useModalHotkeys";
 
 export interface Column {
   id: UniqueIdentifier;
