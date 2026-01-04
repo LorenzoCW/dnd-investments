@@ -130,6 +130,11 @@ export function KanbanBoard() {
     });
   }
 
+  // local update for column.meta
+  function localUpdateColumnMeta(id: string | ColumnId, meta: number | null) {
+    setColumns((cols) => cols.map((c) => (c.id === String(id) ? { ...c, meta: meta ?? undefined } : c)));
+  }
+
   // subscribe to DB (or fall back to test-mode)
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -313,6 +318,33 @@ export function KanbanBoard() {
     }
   }
 
+  // set/clear meta for a column
+  async function setColumnMeta(columnId: ColumnId, value: number | null) {
+    if (testMode) {
+      localUpdateColumnMeta(columnId, value);
+      return;
+    }
+
+    try {
+      // try to call backend; cast to any to avoid hard dependency on a specific db API
+      if ((db as any).editColumnMeta) {
+        await (db as any).editColumnMeta(String(columnId), { meta: value });
+      } else if ((db as any).editColumn) {
+        await (db as any).editColumn(String(columnId), { meta: value });
+      } else {
+        // if no method, just update locally and warn (but don't enter test mode)
+        console.warn("Nenhum método de meta encontrado, atualizando apenas localmente.");
+        localUpdateColumnMeta(columnId, value);
+        return;
+      }
+    } catch (err) {
+      console.error('failed to update column meta, switching to test mode', err);
+      enterTestMode();
+      localUpdateColumnMeta(columnId, value);
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
+  }
+
   function getDraggingTaskData(taskId: UniqueIdentifier, columnId: ColumnId) {
     const tasksInColumn = tasks.filter((task) => task.columnId === columnId);
     const taskPosition = tasksInColumn.findIndex((task) => task.id === taskId);
@@ -414,6 +446,7 @@ export function KanbanBoard() {
                 onTransferTask={(taskId, amount, targetColumnId, dateISO) => transferTask(taskId, amount, targetColumnId, dateISO)}
                 onToggleProjection={(taskId) => toggleProjection(taskId)}
                 onEditTask={(taskId, amount, dateISO, isProjection) => editTask(taskId, amount, dateISO, isProjection)}
+                onSetMeta={(value) => setColumnMeta(col.id, value)}
               />
             );
           })}

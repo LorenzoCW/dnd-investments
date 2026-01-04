@@ -15,6 +15,7 @@ import { useModalHotkeys } from "../hooks/useModalHotkeys";
 export interface Column {
   id: UniqueIdentifier;
   title: string;
+  meta?: number;
 }
 
 export type ColumnType = "Column";
@@ -40,6 +41,7 @@ interface BoardColumnProps {
   ) => void;
   onToggleProjection?: (taskId: UniqueIdentifier) => void;
   onEditTask?: (taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection?: boolean) => void;
+  onSetMeta?: (value: number | null) => void;
 }
 
 function Modal({ children }: { children: React.ReactNode; onClose: () => void }) {
@@ -316,6 +318,71 @@ function EditCardForm({
         </div>
       </div>
     </div>
+  );
+}
+
+function MetaModal({
+  initialMeta,
+  onCancel,
+  onSave,
+}: {
+  initialMeta?: number | undefined | null;
+  onCancel: () => void;
+  onSave: (value: number | null) => void;
+}) {
+  const [valueText, setValueText] = useState(() => (initialMeta !== undefined && initialMeta !== null ? initialMeta.toFixed(2) : ""));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = () => {
+    try {
+      if (valueText.trim() === "") {
+        onSave(null);
+        return;
+      }
+      const v = parseCurrencyInput(valueText);
+      onSave(v);
+    } catch (e: any) {
+      alert(e?.message ?? "Valor inválido");
+    }
+  };
+
+  useModalHotkeys({
+    onCancel,
+    onConfirm: handleSave,
+  });
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <Modal onClose={onCancel}>
+      <div>
+        <h3 className="text-xl font-semibold mb-3">{initialMeta ? "Editar meta" : "Definir meta"}</h3>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm">Valor da meta</label>
+            <input
+              ref={inputRef}
+              value={valueText}
+              onChange={(e) => setValueText(e.target.value)}
+              placeholder="Ex: 600 ou 600,00 ou 1.000,00"
+              className="w-full px-3 py-2 rounded border"
+            />
+            <div className="text-sm text-gray-500 mt-1">Deixe vazio para remover a meta.</div>
+          </div>
+
+          <div className="flex gap-2 justify-end">
+            <button onClick={onCancel} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
+              Cancelar
+            </button>
+            <button onClick={handleSave} className="px-3 py-2 rounded bg-blue-600 text-white hover:ring ring-blue-600 transition-all duration-300 cursor-pointer">
+              Salvar
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -749,6 +816,7 @@ export function BoardColumn({
   onTransferTask,
   onToggleProjection,
   onEditTask,
+  onSetMeta,
 }: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
   const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
@@ -778,6 +846,8 @@ export function BoardColumn({
     open: boolean;
     task: Task | null;
   }>({ open: false, task: null });
+
+  const [isMetaOpen, setIsMetaOpen] = useState(false);
 
   const handleOpenDeleteCardModal = (task: Task) => {
     setTaskToDelete(task);
@@ -833,6 +903,24 @@ export function BoardColumn({
     }).format(sumAll);
   }, [sumAll]);
 
+  const formattedMeta = useMemo(() => {
+    if (column.meta === undefined || column.meta === null) return null;
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(column.meta);
+  }, [column.meta]);
+
+  // decide what to show under the title:
+  // if meta exists -> show "balance / meta"
+  // else if projections exist -> show "balance / projections"
+  // else -> show "balance"
+  const headerValueText = column.meta !== undefined && column.meta !== null
+    ? `${formattedBalance} / ${formattedMeta}`
+    : (sumProjections > 0 ? `${formattedBalance} / ${formattedAll}` : formattedBalance);
+
   const style = { transition, transform: CSS.Translate.toString(transform) };
 
   const variants = cva(
@@ -863,7 +951,6 @@ export function BoardColumn({
   }
 
   function createProjections(totalValue: number, startMonthISO: string | null, endMonthISO: string, dayNumber: number) {
-    // startMonthISO and endMonthISO are in format 'YYYY-MM'
     const now = new Date();
     const startParts = (startMonthISO ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`).split('-');
     const endParts = endMonthISO.split('-');
@@ -914,7 +1001,7 @@ export function BoardColumn({
           <div className="ml-2 text-left">
             <div>{column.title}</div>
             <div className="text-sm font-medium text-gray-500">
-              {formattedBalance}{sumProjections > 0 ? ` / ${formattedAll}` : ''}
+              {headerValueText}
             </div>
           </div>
         </div>
@@ -928,6 +1015,10 @@ export function BoardColumn({
 
           <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsProjectionOpen(true)} title="Criar projeção" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
             <CalendarCheck size={16} />
+          </Button>
+
+          <Button variant="ghost" className="hover:text-indigo-500" onClick={() => setIsMetaOpen(true)} title={column.meta ? "Editar meta" : "Definir meta"} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
+            <Edit size={16} />
           </Button>
 
           {onRemoveColumn && (
@@ -1039,6 +1130,19 @@ export function BoardColumn({
             setIsProjectionOpen(false);
           }}
         />
+      )}
+
+      {isMetaOpen && onSetMeta && (
+        <Modal onClose={() => setIsMetaOpen(false)}>
+          <MetaModal
+            initialMeta={column.meta}
+            onCancel={() => setIsMetaOpen(false)}
+            onSave={(value) => {
+              onSetMeta(value);
+              setIsMetaOpen(false);
+            }}
+          />
+        </Modal>
       )}
 
       {editState.open && editState.task && onEditTask && (
