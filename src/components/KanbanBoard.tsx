@@ -131,7 +131,7 @@ export function KanbanBoard() {
   }
 
   // local update for column.meta
-  function localUpdateColumnMeta(id: string | ColumnId, meta: number | null) {
+  function localUpdateColumnMeta(id: string | ColumnId, meta: number | null | undefined) {
     setColumns((cols) => cols.map((c) => (c.id === String(id) ? { ...c, meta: meta ?? undefined } : c)));
   }
 
@@ -319,24 +319,14 @@ export function KanbanBoard() {
   }
 
   // set/clear meta for a column
-  async function setColumnMeta(columnId: ColumnId, value: number | null) {
+  async function setColumnMeta(columnId: ColumnId, value: number | null | undefined) {
     if (testMode) {
       localUpdateColumnMeta(columnId, value);
       return;
     }
 
     try {
-      // try to call backend; cast to any to avoid hard dependency on a specific db API
-      if ((db as any).editColumnMeta) {
-        await (db as any).editColumnMeta(String(columnId), { meta: value });
-      } else if ((db as any).editColumn) {
-        await (db as any).editColumn(String(columnId), { meta: value });
-      } else {
-        // if no method, just update locally and warn (but don't enter test mode)
-        console.warn("Nenhum método de meta encontrado, atualizando apenas localmente.");
-        localUpdateColumnMeta(columnId, value);
-        return;
-      }
+      await db.editColumn(String(columnId), { meta: value });
     } catch (err) {
       console.error('failed to update column meta, switching to test mode', err);
       enterTestMode();

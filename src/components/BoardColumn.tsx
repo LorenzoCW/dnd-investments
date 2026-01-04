@@ -15,7 +15,7 @@ import { useModalHotkeys } from "../hooks/useModalHotkeys";
 export interface Column {
   id: UniqueIdentifier;
   title: string;
-  meta?: number;
+  meta?: number | null | undefined;
 }
 
 export type ColumnType = "Column";
@@ -41,7 +41,7 @@ interface BoardColumnProps {
   ) => void;
   onToggleProjection?: (taskId: UniqueIdentifier) => void;
   onEditTask?: (taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection?: boolean) => void;
-  onSetMeta?: (value: number | null) => void;
+  onSetMeta?: (value: number | null | undefined) => void;
 }
 
 function Modal({ children }: { children: React.ReactNode; onClose: () => void }) {

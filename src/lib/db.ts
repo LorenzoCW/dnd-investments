@@ -10,7 +10,7 @@ import {
   get,
 } from "firebase/database";
 
-export type Column = { id: string; title: string };
+export type Column = { id: string; title: string; meta?: number | null | undefined };
 export type Task = {
   id: string;
   columnId: string;
@@ -154,4 +154,8 @@ export async function transferTask(sourceId: string, amount: number, targetColum
 
   await update(ref(db, "/"), updates);
   return newId;
+}
+
+export async function editColumn(id: string, payload: Partial<{ title: string; meta: number | null | undefined }>) {
+  await update(ref(db, `columns/${id}`), payload as any);
 }
