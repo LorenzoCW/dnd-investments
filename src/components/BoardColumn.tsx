@@ -8,7 +8,7 @@ import { Task, TaskCard } from "./TaskCard";
 import { cva } from "class-variance-authority";
 import { Card, CardContent, CardHeader } from "./ui/card";
 import { Button } from "./ui/button";
-import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit, Trash } from "lucide-react";
+import { ArrowLeftRight, Plus, SquareCheck, X, CalendarCheck, Edit, Trash, Goal } from "lucide-react";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
 import { useModalHotkeys } from "../hooks/useModalHotkeys";
 
@@ -376,7 +376,7 @@ function MetaModal({
             <button onClick={onCancel} className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer">
               Cancelar
             </button>
-            <button onClick={handleSave} className="px-3 py-2 rounded bg-blue-600 text-white hover:ring ring-blue-600 transition-all duration-300 cursor-pointer">
+            <button onClick={handleSave} className="px-3 py-2 rounded bg-orange-600 text-white hover:ring ring-orange-600 transition-all duration-300 cursor-pointer">
               Salvar
             </button>
           </div>
@@ -994,7 +994,7 @@ export function BoardColumn({
       <CardHeader
         {...attributes}
         {...listeners}
-        className="px-3 py-5 font-semibold border-b-2 flex flex-row justify-between cursor-grab"
+        className="px-3 py-5 font-semibold border-b-2 flex flex-row justify-between cursor-grab group relative"
       >
 
         <div className="flex items-center">
@@ -1006,25 +1006,46 @@ export function BoardColumn({
           </div>
         </div>
 
-        <div className="flex items-center">
+        <div className="-translate-x-3 absolute w-full z-10 -bottom-2 flex justify-center opacity-0 group-hover:opacity-100 gap-0.5 group-hover:gap-1.5 transition-all duration-300">
+
           {onAddTask && (
-            <Button variant="ghost" className="hover:text-green-500" onClick={() => setIsModalOpen(true)} title="Adicionar cartão" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
-              <Plus size={16} />
-            </Button>
+            <button
+              className={`${actionButtonsStyle} bg-emerald-600 hover:ring ring-emerald-600`}
+              onClick={() => setIsModalOpen(true)}
+              title="Adicionar cartão"
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            >
+              <Plus size={14} />
+            </button>
           )}
 
-          <Button variant="ghost" className="hover:text-blue-500" onClick={() => setIsProjectionOpen(true)} title="Criar projeção" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
-            <CalendarCheck size={16} />
-          </Button>
+          <button
+            className={`${actionButtonsStyle} bg-blue-600 hover:ring ring-blue-600`}
+            onClick={() => setIsProjectionOpen(true)}
+            title="Criar projeção"
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <CalendarCheck size={14} />
+          </button>
 
-          <Button variant="ghost" className="hover:text-indigo-500" onClick={() => setIsMetaOpen(true)} title={column.meta ? "Editar meta" : "Definir meta"} onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
-            <Edit size={16} />
-          </Button>
+          <button
+            className={`${actionButtonsStyle} bg-orange-600 hover:ring ring-orange-600`}
+            onClick={() => setIsMetaOpen(true)}
+            title={column.meta ? "Editar meta" : "Definir meta"}
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <Goal size={14} />
+          </button>
 
           {onRemoveColumn && (
-            <Button variant="ghost" className="hover:text-rose-500" onClick={handleOpenDeleteColumnModal} title="Remover lista" onPointerDown={(e) => { e.preventDefault(); e.stopPropagation() }}>
-              <X size={16} />
-            </Button>
+            <button
+              className={`${actionButtonsStyle} bg-rose-600 hover:ring ring-rose-600`}
+              onClick={handleOpenDeleteColumnModal}
+              title="Remover lista"
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            >
+              <X size={14} />
+            </button>
           )}
 
         </div>
@@ -1071,7 +1092,7 @@ export function BoardColumn({
                   {onEditTask && (
                     <button
                       title="Editar cartão"
-                      className={`${actionButtonsStyle} bg-yellow-600 hover:ring ring-yellow-600`}
+                      className={`${actionButtonsStyle} bg-amber-600 hover:ring ring-amber-600`}
                       onClick={() => setEditState({ open: true, task })}
                     >
                       <Edit size={14} />
