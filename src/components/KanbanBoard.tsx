@@ -45,6 +45,7 @@ export function KanbanBoard() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
   const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
@@ -417,6 +418,9 @@ export function KanbanBoard() {
     try {
       localStorage.setItem(PLACES_KEY, JSON.stringify(next));
       setPlaces(next);
+      try {
+        window.dispatchEvent(new StorageEvent("storage", { key: PLACES_KEY, newValue: JSON.stringify(next) } as any));
+      } catch (e) { }
     } catch (e) {
       console.warn("Failed to save places", e);
     }
@@ -426,12 +430,6 @@ export function KanbanBoard() {
     const newPlace: Place = { id: uid("place"), name, color: color ?? "#06b6d4" };
     const next = [...places, newPlace];
     savePlaces(next);
-  }
-
-  function removePlace(id: string) {
-    const next = places.filter((p) => p.id !== id);
-    savePlaces(next);
-    setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
   }
 
   function setColumnPlace(columnId: ColumnId, placeId?: string | null) {
@@ -458,12 +456,37 @@ export function KanbanBoard() {
     window.addEventListener("kanban:add-place", onAddPlace as EventListener);
     window.addEventListener("kanban:place-hover", onPlaceHover as EventListener);
 
+    function onStorage(ev: StorageEvent) {
+      if (ev.key === PLACES_KEY) {
+        try {
+          if (ev.newValue) setPlaces(JSON.parse(ev.newValue));
+          else setPlaces([]);
+        } catch (e) {
+          console.warn("Failed to parse places from storage event", e);
+        }
+      }
+    }
+    window.addEventListener("storage", onStorage as any);
+
     return () => {
       window.removeEventListener("kanban:add-place", onAddPlace as EventListener);
       window.removeEventListener("kanban:place-hover", onPlaceHover as EventListener);
+      window.removeEventListener("storage", onStorage as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [places, testMode]);
+
+  function handleOpenAddModal() {
+    setShowAddModal(true);
+  }
+
+  function handleCreatePlace(name: string, color: string) {
+    const next = [...places, { id: uid("place"), name, color }];
+    savePlaces(next);
+    // keep compatibility with other parts/listeners that might expect this event
+    window.dispatchEvent(new CustomEvent("kanban:add-place", { detail: { name, color } }));
+    setShowAddModal(false);
+  }
 
   return (
     <DndContext
@@ -480,7 +503,40 @@ export function KanbanBoard() {
       )}
 
       {/* top toolbar to add a column */}
-      <div className="flex gap-2 items-center justify-center lg:mb-4">
+      <div className="flex gap-2 items-center justify-center lg:mb-4 relative">
+        {/* Places bar */}
+        <div className="absolute left-0 top-0 mt-2 w-1/5 h-full border rounded flex items-center p-2 overflow-hidden">
+          <div className="flex items-center gap-2 overflow-x-auto pr-2">
+            {places.length === 0 ? (
+              <div className="text-sm text-gray-500">Nenhum lugar</div>
+            ) : (
+              places.map((p) => {
+                const isActive = hoveredPlaceId === p.id;
+                return (
+                  <div
+                    key={p.id}
+                    className="flex-shrink-0 px-3 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-default select-none"
+                    title={p.name}
+                    onMouseEnter={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: p.id } }))}
+                    onMouseLeave={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: null } }))}
+                    style={{ color: isActive ? p.color : undefined, border: isActive ? `1px solid ${p.color}33` : undefined }}
+                  >
+                    {p.name}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <button
+            onClick={handleOpenAddModal}
+            aria-label="Adicionar lugar"
+            className="ml-auto -mr-1 w-8 h-8 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
+          >
+            +
+          </button>
+        </div>
+
         <AddColumnForm onAdd={addColumn} />
       </div>
 
@@ -534,6 +590,19 @@ export function KanbanBoard() {
           </DragOverlay>,
           document.body
         )}
+
+      {/* Add Place modal */}
+      {showAddModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowAddModal(false)}
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-md border-2 border-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Criar lugar</h3>
+            <AddPlaceForm onCancel={() => setShowAddModal(false)} onCreate={handleCreatePlace} />
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 
@@ -672,5 +741,43 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
         Adicionar investimento
       </button>
     </form>
+  );
+}
+
+function AddPlaceForm({ onCancel, onCreate }: { onCancel: () => void; onCreate: (name: string, color: string) => void }) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#06b6d4");
+
+  return (
+    <div>
+      <div className="space-y-3">
+        <div>
+          <label className="block text-sm">Nome</label>
+          <input className="w-full px-3 py-2 rounded border" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+
+        <div>
+          <label className="block text-sm">Cor</label>
+          <div className="flex items-center gap-3">
+            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+            <div className="text-sm text-gray-500">Escolha uma cor para identificar o lugar</div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onCancel} className="px-3 py-2 rounded border">Cancelar</button>
+          <button
+            onClick={() => {
+              const trimmed = name.trim();
+              if (!trimmed) return alert("Informe um nome");
+              onCreate(trimmed, color);
+            }}
+            className="px-3 py-2 rounded bg-sky-700 text-white"
+          >
+            Criar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
