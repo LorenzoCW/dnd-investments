@@ -16,6 +16,7 @@ export interface Column {
   id: UniqueIdentifier;
   title: string;
   meta?: number | null | undefined;
+  placeId?: string | null;
 }
 
 export type ColumnType = "Column";
@@ -30,6 +31,8 @@ interface BoardColumnProps {
   tasks: Task[];
   isOverlay?: boolean;
   allColumns?: Column[];
+  allPlaces?: { id: string; name: string; color: string; }[];
+  hoveredPlaceId?: string | null;
   onAddTask?: (amount: number, dateISO?: string | null, isProjection?: boolean) => void;
   onRemoveTask?: (taskId: string) => void;
   onRemoveColumn?: () => void;
@@ -42,6 +45,7 @@ interface BoardColumnProps {
   onToggleProjection?: (taskId: UniqueIdentifier) => void;
   onEditTask?: (taskId: UniqueIdentifier, amount: number, dateISO?: string | null, isProjection?: boolean) => void;
   onSetMeta?: (value: number | null | undefined) => void;
+  onSetPlace?: (placeId?: string | null) => void;
 }
 
 function Modal({ children }: { children: React.ReactNode; onClose: () => void }) {
@@ -810,6 +814,8 @@ export function BoardColumn({
   tasks,
   isOverlay,
   allColumns,
+  allPlaces = [],
+  hoveredPlaceId,
   onAddTask,
   onRemoveTask,
   onRemoveColumn,
@@ -817,6 +823,7 @@ export function BoardColumn({
   onToggleProjection,
   onEditTask,
   onSetMeta,
+  onSetPlace,
 }: BoardColumnProps) {
   const tasksIds = useMemo(() => tasks.map((task) => task.id), [tasks]);
   const [isDeleteCardOpen, setIsDeleteCardOpen] = useState(false);
@@ -985,11 +992,27 @@ export function BoardColumn({
     projections.forEach((p) => onAddTask(p.amount, p.dateISO, true));
   }
 
+  const isThisPlaceHovered = !!(hoveredPlaceId && column.placeId && hoveredPlaceId === column.placeId);
+  const hoveredPlace = (allPlaces ?? []).find((p) => p.id === (hoveredPlaceId ?? column.placeId));
+  const thisPlace = (allPlaces ?? []).find((p) => p.id === column.placeId);
+  const highlightColor = hoveredPlace?.color ?? thisPlace?.color;
+
+  const combinedStyle = {
+    ...style,
+    boxShadow: isThisPlaceHovered ? `0 0 0 6px ${highlightColor}33` : undefined,
+  } as React.CSSProperties;
+
   return (
     <Card
       ref={setNodeRef}
-      style={style}
+      style={combinedStyle}
       className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
+      onMouseEnter={() => {
+        window.dispatchEvent(new CustomEvent("kanban:column-hover", { detail: { placeId: column.placeId ?? null } }));
+      }}
+      onMouseLeave={() => {
+        window.dispatchEvent(new CustomEvent("kanban:column-hover", { detail: { placeId: null } }));
+      }}
     >
       <CardHeader
         {...attributes}
@@ -999,8 +1022,33 @@ export function BoardColumn({
 
         <div className="flex items-center">
           <div className="ml-2 text-left">
-            <div>{column.title}</div>
-            <div className="text-sm font-medium text-gray-500">
+            <div className="flex items-center gap-3">
+              <div style={{ color: isThisPlaceHovered ? highlightColor : undefined }}>{column.title}</div>
+
+              {/* Select place */}
+              <div>
+                <select
+                  value={column.placeId ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (typeof onSetPlace === "function") {
+                      onSetPlace(val === "" ? null : val);
+                    }
+                  }}
+                  aria-label="Atribuir lugar à lista"
+                  className="text-sm rounded border px-2 py-1 bg-white dark:bg-slate-800"
+                >
+                  <option value="">Sem lugar</option>
+                  {(allPlaces ?? []).map((p: { id: string; name: string; color: string }) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="text-sm font-medium text-gray-500 mt-1">
               {headerValueText}
             </div>
           </div>

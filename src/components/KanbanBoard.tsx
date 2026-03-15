@@ -27,6 +27,12 @@ import * as db from "../lib/db";
 
 export type ColumnId = Column["id"] | string;
 
+type Place = {
+  id: string;
+  name: string;
+  color: string;
+};
+
 const DEFAULT_COLUMNS: Column[] = [
   { id: "col-1", title: "A Fazer" },
   { id: "col-2", title: "Fazendo" },
@@ -36,6 +42,8 @@ const DEFAULT_COLUMNS: Column[] = [
 export function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
@@ -141,7 +149,7 @@ export function KanbanBoard() {
     try {
       // try to subscribe using the external db implementation
       unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
-        setColumns(cols);
+        setColumns(cols as any);
 
         const mappedTasks: Task[] = ts.map((t) => ({
           id: t.id,
@@ -394,6 +402,69 @@ export function KanbanBoard() {
     },
   };
 
+  const PLACES_KEY = "kanban:places";
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PLACES_KEY);
+      if (raw) setPlaces(JSON.parse(raw));
+    } catch (e) {
+      console.warn("Failed to load places", e);
+    }
+  }, []);
+
+  function savePlaces(next: Place[]) {
+    try {
+      localStorage.setItem(PLACES_KEY, JSON.stringify(next));
+      setPlaces(next);
+    } catch (e) {
+      console.warn("Failed to save places", e);
+    }
+  }
+
+  function addPlace(name: string, color?: string) {
+    const newPlace: Place = { id: uid("place"), name, color: color ?? "#06b6d4" };
+    const next = [...places, newPlace];
+    savePlaces(next);
+  }
+
+  function removePlace(id: string) {
+    const next = places.filter((p) => p.id !== id);
+    savePlaces(next);
+    setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
+  }
+
+  function setColumnPlace(columnId: ColumnId, placeId?: string | null) {
+    setColumns((cols) => cols.map((c) => (c.id === columnId ? { ...c, placeId: placeId ?? undefined } : c)));
+    if (!testMode) {
+      try {
+        // @ts-ignore
+        db.editColumn(String(columnId), { placeId: placeId ?? null }).catch(() => { });
+      } catch (e) { }
+    }
+  }
+
+  useEffect(() => {
+    function onAddPlace(e: any) {
+      const name = e?.detail?.name;
+      const color = e?.detail?.color ?? "#06b6d4";
+      if (name) addPlace(name, color);
+    }
+    function onPlaceHover(e: any) {
+      const placeId = e?.detail?.placeId ?? null;
+      setHoveredPlaceId(placeId);
+    }
+
+    window.addEventListener("kanban:add-place", onAddPlace as EventListener);
+    window.addEventListener("kanban:place-hover", onPlaceHover as EventListener);
+
+    return () => {
+      window.removeEventListener("kanban:add-place", onAddPlace as EventListener);
+      window.removeEventListener("kanban:place-hover", onPlaceHover as EventListener);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [places, testMode]);
+
   return (
     <DndContext
       accessibility={{ announcements }}
@@ -430,6 +501,9 @@ export function KanbanBoard() {
                 column={col}
                 tasks={tasksForCol}
                 allColumns={columns}
+                allPlaces={places}
+                hoveredPlaceId={hoveredPlaceId}
+                onSetPlace={(placeId) => setColumnPlace(col.id, placeId)}
                 onAddTask={(amount, dateISO, isProjection) => addTask(col.id, amount, dateISO, isProjection)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
                 onRemoveColumn={() => removeColumn(col.id)}
