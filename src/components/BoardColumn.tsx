@@ -33,6 +33,7 @@ interface BoardColumnProps {
   allColumns?: Column[];
   allPlaces?: { id: string; name: string; color: string; }[];
   hoveredPlaceId?: string | null;
+  selectedPlaceIds?: string[];
   onAddTask?: (amount: number, dateISO?: string | null, isProjection?: boolean) => void;
   onRemoveTask?: (taskId: string) => void;
   onRemoveColumn?: () => void;
@@ -816,6 +817,7 @@ export function BoardColumn({
   allColumns,
   allPlaces = [],
   hoveredPlaceId,
+  selectedPlaceIds = [],
   onAddTask,
   onRemoveTask,
   onRemoveColumn,
@@ -994,13 +996,16 @@ export function BoardColumn({
   }
 
   const isThisPlaceHovered = !!(hoveredPlaceId && column.placeId && hoveredPlaceId === column.placeId);
+  const isThisPlaceSelected = !!(column.placeId && selectedPlaceIds.includes(column.placeId));
+  const isThisPlaceActive = isThisPlaceHovered || isThisPlaceSelected;
+
   const hoveredPlace = (allPlaces ?? []).find((p) => p.id === (hoveredPlaceId ?? column.placeId));
   const thisPlace = (allPlaces ?? []).find((p) => p.id === column.placeId);
   const highlightColor = hoveredPlace?.color ?? thisPlace?.color;
 
   const combinedStyle = {
     ...style,
-    boxShadow: isThisPlaceHovered ? `0 0 0 6px ${highlightColor}33` : undefined,
+    boxShadow: isThisPlaceActive ? `0 0 0 6px ${highlightColor}33` : undefined,
   } as React.CSSProperties;
 
   return (
@@ -1009,10 +1014,10 @@ export function BoardColumn({
       style={combinedStyle}
       className={variants({ dragging: isOverlay ? "overlay" : isDragging ? "over" : undefined })}
       onMouseEnter={() => {
-        window.dispatchEvent(new CustomEvent("kanban:column-hover", { detail: { placeId: column.placeId ?? null } }));
+        window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: column.placeId ?? null } }));
       }}
       onMouseLeave={() => {
-        window.dispatchEvent(new CustomEvent("kanban:column-hover", { detail: { placeId: null } }));
+        window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: null } }));
       }}
     >
       <CardHeader

@@ -31,6 +31,7 @@ type Place = {
   id: string;
   name: string;
   color: string;
+  expectedValue?: number | null;
 };
 
 const DEFAULT_COLUMNS: Column[] = [
@@ -39,6 +40,46 @@ const DEFAULT_COLUMNS: Column[] = [
   { id: "col-3", title: "Feito" },
 ];
 
+function parseCurrencyInput(input: string): number {
+  const s = String(input).trim();
+  if (!s) throw new Error("Entrada vazia");
+
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+
+  let normalized = s;
+
+  if (hasComma && hasDot) {
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      normalized = s.replace(/\./g, "").replace(/,/g, ".");
+    } else {
+      normalized = s.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    normalized = s.replace(/,/g, ".");
+  }
+
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
+    throw new Error("Formato numérico inválido");
+  }
+
+  const parts = normalized.split(".");
+  if (parts[1] && parts[1].length > 2) {
+    throw new Error("Apenas até 2 casas decimais");
+  }
+
+  const finalStr =
+    parts.length === 1
+      ? `${parts[0]}.00`
+      : parts[1].length === 1
+        ? `${parts[0]}.${parts[1]}0`
+        : normalized;
+
+  const n = Math.round(Number(finalStr) * 100) / 100;
+  if (Number.isNaN(n)) throw new Error("Número inválido");
+  return n;
+}
+
 export function KanbanBoard() {
   const [columns, setColumns] = useState<Column[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -46,6 +87,11 @@ export function KanbanBoard() {
   const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
+  const [editingPlace, setEditingPlace] = useState<Place | null>(null);
+
+  const PLACES_KEY = "kanban:places";
+  const SELECTED_PLACES_KEY = "kanban:selected-places";
 
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
   const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
@@ -403,32 +449,75 @@ export function KanbanBoard() {
     },
   };
 
-  const PLACES_KEY = "kanban:places";
-
   useEffect(() => {
     try {
       const raw = localStorage.getItem(PLACES_KEY);
-      if (raw) setPlaces(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setPlaces(parsed.map(normalizePlace).filter((p) => p.name.trim()));
+        }
+      }
     } catch (e) {
       console.warn("Failed to load places", e);
     }
   }, []);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SELECTED_PLACES_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setSelectedPlaceIds(parsed.map(String));
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load selected places", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SELECTED_PLACES_KEY, JSON.stringify(selectedPlaceIds));
+    } catch (e) {
+      console.warn("Failed to save selected places", e);
+    }
+  }, [selectedPlaceIds]);
+
+  function normalizePlace(raw: any): Place {
+    return {
+      id: String(raw?.id ?? uid("place")),
+      name: String(raw?.name ?? ""),
+      color: String(raw?.color ?? "#06b6d4"),
+      expectedValue:
+        raw?.expectedValue === undefined || raw?.expectedValue === null || raw?.expectedValue === ""
+          ? null
+          : Number(raw.expectedValue) || null,
+    };
+  }
+
   function savePlaces(next: Place[]) {
     try {
-      localStorage.setItem(PLACES_KEY, JSON.stringify(next));
-      setPlaces(next);
-      try {
-        window.dispatchEvent(new StorageEvent("storage", { key: PLACES_KEY, newValue: JSON.stringify(next) } as any));
-      } catch (e) { }
+      const normalized = next.map(normalizePlace);
+      localStorage.setItem(PLACES_KEY, JSON.stringify(normalized));
+      setPlaces(normalized);
     } catch (e) {
       console.warn("Failed to save places", e);
     }
   }
 
-  function addPlace(name: string, color?: string) {
-    const newPlace: Place = { id: uid("place"), name, color: color ?? "#06b6d4" };
-    const next = [...places, newPlace];
+  function togglePlaceSelection(id: string) {
+    setSelectedPlaceIds((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  }
+
+  function updatePlace(
+    id: string,
+    patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>
+  ) {
+    const next = places.map((p) => (p.id === id ? { ...p, ...patch } : p));
     savePlaces(next);
   }
 
@@ -436,7 +525,45 @@ export function KanbanBoard() {
     const next = places.filter((p) => p.id !== id);
     savePlaces(next);
     setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
+    setSelectedPlaceIds((curr) => curr.filter((item) => item !== id));
+    if (hoveredPlaceId === id) setHoveredPlaceId(null);
+    if (editingPlace?.id === id) setEditingPlace(null);
   }
+
+  // const activePlaceIds = hoveredPlaceId ?? selectedPlaceIds;
+
+  // const moneyFormatter = useMemo(
+  //   () =>
+  //     new Intl.NumberFormat("pt-BR", {
+  //       style: "currency",
+  //       currency: "BRL",
+  //       minimumFractionDigits: 2,
+  //       maximumFractionDigits: 2,
+  //     }),
+  //   []
+  // );
+
+  // function formatMoney(value?: number | null) {
+  //   if (value === undefined || value === null || Number.isNaN(value)) return "—";
+  //   return moneyFormatter.format(value);
+  // }
+
+  const placeTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    places.forEach((p) => totals.set(p.id, 0));
+
+    columns.forEach((col) => {
+      if (!col.placeId) return;
+
+      const totalForColumn = tasks
+        .filter((t) => t.columnId === col.id)
+        .reduce((sum, t) => sum + (typeof t.content === "number" ? t.content : Number(t.content) || 0), 0);
+
+      totals.set(col.placeId, (totals.get(col.placeId) ?? 0) + totalForColumn);
+    });
+
+    return totals;
+  }, [places, columns, tasks]);
 
   function setColumnPlace(columnId: ColumnId, placeId?: string | null) {
     setColumns((cols) => cols.map((c) => (c.id === columnId ? { ...c, placeId: placeId ?? undefined } : c)));
@@ -448,50 +575,77 @@ export function KanbanBoard() {
     }
   }
 
-  useEffect(() => {
-    function onAddPlace(e: any) {
-      const name = e?.detail?.name;
-      const color = e?.detail?.color ?? "#06b6d4";
-      if (name) addPlace(name, color);
-    }
-    function onPlaceHover(e: any) {
-      const placeId = e?.detail?.placeId ?? null;
-      setHoveredPlaceId(placeId);
-    }
+  // useEffect(() => {
+  //   function onAddPlace(e: any) {
+  //     const name = e?.detail?.name;
+  //     const color = e?.detail?.color ?? "#06b6d4";
+  //     if (name) addPlace(name, color);
+  //   }
+  //   function onPlaceHover(e: any) {
+  //     const placeId = e?.detail?.placeId ?? null;
+  //     setHoveredPlaceId(placeId);
+  //   }
 
-    window.addEventListener("kanban:add-place", onAddPlace as EventListener);
-    window.addEventListener("kanban:place-hover", onPlaceHover as EventListener);
+  //   window.addEventListener("kanban:add-place", onAddPlace as EventListener);
+  //   window.addEventListener("kanban:place-hover", onPlaceHover as EventListener);
 
-    function onStorage(ev: StorageEvent) {
-      if (ev.key === PLACES_KEY) {
-        try {
-          if (ev.newValue) setPlaces(JSON.parse(ev.newValue));
-          else setPlaces([]);
-        } catch (e) {
-          console.warn("Failed to parse places from storage event", e);
-        }
-      }
-    }
-    window.addEventListener("storage", onStorage as any);
+  //   function onStorage(ev: StorageEvent) {
+  //     if (ev.key === PLACES_KEY) {
+  //       try {
+  //         if (ev.newValue) setPlaces(JSON.parse(ev.newValue));
+  //         else setPlaces([]);
+  //       } catch (e) {
+  //         console.warn("Failed to parse places from storage event", e);
+  //       }
+  //     }
+  //   }
+  //   window.addEventListener("storage", onStorage as any);
 
-    return () => {
-      window.removeEventListener("kanban:add-place", onAddPlace as EventListener);
-      window.removeEventListener("kanban:place-hover", onPlaceHover as EventListener);
-      window.removeEventListener("storage", onStorage as any);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places, testMode]);
+  //   return () => {
+  //     window.removeEventListener("kanban:add-place", onAddPlace as EventListener);
+  //     window.removeEventListener("kanban:place-hover", onPlaceHover as EventListener);
+  //     window.removeEventListener("storage", onStorage as any);
+  //   };
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [places, testMode]);
 
   function handleOpenAddModal() {
     setShowAddModal(true);
   }
 
   function handleCreatePlace(name: string, color: string) {
-    const next = [...places, { id: uid("place"), name, color }];
+    const next = [...places, { id: uid("place"), name, color, expectedValue: null }];
     savePlaces(next);
-    // keep compatibility with other parts/listeners that might expect this event
-    window.dispatchEvent(new CustomEvent("kanban:add-place", { detail: { name, color } }));
     setShowAddModal(false);
+  }
+
+  {
+    editingPlace && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+        onClick={() => setEditingPlace(null)}
+      >
+        <div
+          className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-md border-2 border-slate-800 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 className="text-lg font-semibold mb-4">Editar lugar</h3>
+
+          <PlaceEditorForm
+            place={editingPlace}
+            onCancel={() => setEditingPlace(null)}
+            onSave={(patch) => {
+              updatePlace(editingPlace.id, patch);
+              setEditingPlace(null);
+            }}
+            onDelete={() => {
+              removePlace(editingPlace.id);
+              setEditingPlace(null);
+            }}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -532,6 +686,7 @@ export function KanbanBoard() {
                 allColumns={columns}
                 allPlaces={places}
                 hoveredPlaceId={hoveredPlaceId}
+                selectedPlaceIds={selectedPlaceIds}
                 onSetPlace={(placeId) => setColumnPlace(col.id, placeId)}
                 onAddTask={(amount, dateISO, isProjection) => addTask(col.id, amount, dateISO, isProjection)}
                 onRemoveTask={(taskId) => removeTask(taskId)}
@@ -585,7 +740,7 @@ export function KanbanBoard() {
           <button
             onClick={handleOpenAddModal}
             aria-label="Adicionar lugar"
-            className="w-8 h-8 p-3 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
+            className="w-8 h-8 p-6 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
           >
             +
           </button>
@@ -593,22 +748,16 @@ export function KanbanBoard() {
           {places.length === 0 ? (
             <div className="text-sm text-gray-500">Nenhum lugar</div>
           ) : (
-            places.map((p) => {
-              const isActive = hoveredPlaceId === p.id;
-              return (
-                <div
-                  key={p.id}
-                  className="flex-shrink-0 px-3 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-default select-none"
-                  title={p.name}
-                  onMouseEnter={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: p.id } }))}
-                  onMouseLeave={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: null } }))}
-                  style={{ color: isActive ? p.color : undefined, border: isActive ? `1px solid ${p.color}` : "1px solid" }}
-                  onClick={() => removePlace(p.id)}
-                >
-                  {p.name}
-                </div>
-              );
-            })
+            places.map((p) => (
+              <PlaceChip
+                key={p.id}
+                place={p}
+                total={placeTotals.get(p.id) ?? 0}
+                isActive={selectedPlaceIds.includes(p.id) || hoveredPlaceId === p.id}
+                onToggle={() => togglePlaceSelection(p.id)}
+                onEdit={() => setEditingPlace(p)}
+              />
+            ))
           )}
         </div>
 
@@ -785,6 +934,172 @@ function AddPlaceForm({ onCancel, onCreate }: { onCancel: () => void; onCreate: 
             className="px-3 py-2 rounded bg-sky-700 text-white"
           >
             Criar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlaceChip({
+  place,
+  total,
+  isActive,
+  onToggle,
+  onEdit,
+}: {
+  place: Place;
+  total: number;
+  isActive: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+}) {
+  const pressTimerRef = useRef<number | null>(null);
+  const longPressedRef = useRef(false);
+
+  const clearTimer = () => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => clearTimer();
+  }, []);
+
+  return (
+    <button
+      type="button"
+      className="flex-shrink-0 px-3 py-2 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-pointer select-none min-w-[170px] text-left"
+      title={place.name}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        longPressedRef.current = false;
+        clearTimer();
+        pressTimerRef.current = window.setTimeout(() => {
+          longPressedRef.current = true;
+          onEdit();
+        }, 2000);
+      }}
+      onPointerUp={clearTimer}
+      onPointerCancel={clearTimer}
+      onPointerLeave={clearTimer}
+      onClick={() => {
+        if (longPressedRef.current) {
+          longPressedRef.current = false;
+          return;
+        }
+        onToggle();
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{
+        color: isActive ? place.color : undefined,
+        border: isActive ? `1px solid ${place.color}` : "1px solid transparent",
+        boxShadow: isActive ? `0 0 0 6px ${place.color}22` : undefined,
+        background: isActive ? `${place.color}18` : undefined,
+      }}
+    >
+      <div className="flex flex-col leading-tight">
+        <span className="truncate max-w-[220px]">{place.name}</span>
+        <span className="text-[11px] opacity-80">
+          Total: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(total)}
+          {place.expectedValue !== undefined && place.expectedValue !== null
+            ? ` · Esperado: ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(place.expectedValue)}`
+            : ""}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function PlaceEditorForm({
+  place,
+  onCancel,
+  onSave,
+  onDelete,
+}: {
+  place: Place;
+  onCancel: () => void;
+  onSave: (patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => void;
+  onDelete: () => void;
+}) {
+  const [name, setName] = useState(place.name);
+  const [color, setColor] = useState(place.color);
+  const [expectedText, setExpectedText] = useState(
+    place.expectedValue !== undefined && place.expectedValue !== null ? place.expectedValue.toFixed(2) : ""
+  );
+
+  useEffect(() => {
+    setName(place.name);
+    setColor(place.color);
+    setExpectedText(
+      place.expectedValue !== undefined && place.expectedValue !== null ? place.expectedValue.toFixed(2) : ""
+    );
+  }, [place]);
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-lg font-semibold">Editar lugar</h3>
+
+      <div>
+        <label className="block text-sm mb-1">Nome</label>
+        <input
+          className="w-full px-3 py-2 rounded border"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm mb-1">Cor</label>
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+      </div>
+
+      <div>
+        <label className="block text-sm mb-1">Valor esperado</label>
+        <input
+          className="w-full px-3 py-2 rounded border"
+          value={expectedText}
+          onChange={(e) => setExpectedText(e.target.value)}
+          placeholder="Ex: 1500,00"
+        />
+        <div className="text-xs text-gray-500 mt-1">Deixe vazio para remover o valor esperado.</div>
+      </div>
+
+      <div className="flex justify-between gap-2 pt-2">
+        <button
+          onClick={() => {
+            if (window.confirm(`Excluir o lugar "${place.name}"?`)) onDelete();
+          }}
+          className="px-3 py-2 rounded bg-rose-600 text-white"
+        >
+          Excluir
+        </button>
+
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="px-3 py-2 rounded border">
+            Cancelar
+          </button>
+          <button
+            onClick={() => {
+              const trimmed = name.trim();
+              if (!trimmed) return alert("Informe um nome");
+
+              let expectedValue: number | null = null;
+              if (expectedText.trim() !== "") {
+                expectedValue = parseCurrencyInput(expectedText);
+              }
+
+              onSave({
+                name: trimmed,
+                color,
+                expectedValue,
+              });
+            }}
+            className="px-3 py-2 rounded bg-sky-700 text-white"
+          >
+            Salvar
           </button>
         </div>
       </div>
