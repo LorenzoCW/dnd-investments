@@ -930,14 +930,15 @@ export function BoardColumn({
 
   const style = { transition, transform: CSS.Translate.toString(transform) };
 
+  // columns
   const variants = cva(
-    "h-[530px] lg:h-[750px] max-h-[750px] w-[300px] lg:w-[340px] max-w-full bg-primary-foreground flex flex-col flex-shrink-0 snap-center",
+    "h-[650px] lg:h-[726px] w-[300px] lg:w-[340px] max-w-full bg-primary-foreground flex flex-col flex-shrink-0 snap-center",
     {
       variants: {
         dragging: {
-          default: "border-2 border-transparent",
-          over: "ring-2 opacity-30",
-          overlay: "ring-2 ring-primary",
+          default: "border-1 border-transparent",
+          over: "ring-1 ring-primary opacity-30",
+          overlay: "ring-1 ring-primary",
         },
       },
     }
@@ -1036,7 +1037,7 @@ export function BoardColumn({
                     }
                   }}
                   aria-label="Atribuir lugar à lista"
-                  className="text-sm rounded border px-2 py-1 bg-white dark:bg-slate-800"
+                  className="text-sm rounded border px-2 py-1 bg-white dark:bg-slate-800 w-40 truncate"
                 >
                   <option value="">Sem lugar</option>
                   {(allPlaces ?? []).map((p: { id: string; name: string; color: string }) => (
@@ -1281,7 +1282,8 @@ export function BoardColumn({
 export function BoardContainer({ children }: { children: React.ReactNode }) {
   const dndContext = useDndContext();
 
-  const variations = cva("px-2 md:px-0 flex lg:justify-center pb-4", {
+  // columns container
+  const variations = cva("px-2 md:px-0 flex lg:justify-center h-[80%] lg:h-[78%]", {
     variants: {
       dragging: {
         default: "snap-x snap-mandatory",

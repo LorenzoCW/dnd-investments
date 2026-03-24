@@ -93,7 +93,7 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
     >
 
       <CardHeader
-        {...(!isMobile ? { ...attributes, ...listeners, className: "p-3 border-b-2 border-secondary relative cursor-grab" } : {})}
+        {...(!isMobile ? { ...attributes, ...listeners, className: "relative cursor-grab" } : {})}
       >
 
         <div className="flex">
@@ -110,7 +110,7 @@ export function TaskCard({ task, isOverlay }: TaskCardProps) {
             </Button>
           )}
 
-          <div className={`text-xl ${isMobile ? "ml-10" : ""}`}>{formattedAmount}</div>
+          <div className={`text-xl ${isMobile ? "ml-8 -translate-y-0.5" : ""}`}>{formattedAmount}</div>
 
           <Badge variant={"outline"} className="ml-auto font-semibold h-6">
             {task.isProjection ? "Projeção" : "Saldo"}

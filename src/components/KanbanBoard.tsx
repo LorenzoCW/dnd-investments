@@ -432,6 +432,12 @@ export function KanbanBoard() {
     savePlaces(next);
   }
 
+  function removePlace(id: string) {
+    const next = places.filter((p) => p.id !== id);
+    savePlaces(next);
+    setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
+  }
+
   function setColumnPlace(columnId: ColumnId, placeId?: string | null) {
     setColumns((cols) => cols.map((c) => (c.id === columnId ? { ...c, placeId: placeId ?? undefined } : c)));
     if (!testMode) {
@@ -504,39 +510,6 @@ export function KanbanBoard() {
 
       {/* top toolbar to add a column */}
       <div className="flex gap-2 items-center justify-center lg:mb-4 relative">
-        {/* Places bar */}
-        <div className="absolute left-0 top-0 mt-2 w-1/5 h-full border rounded flex items-center p-2 overflow-hidden">
-          <div className="flex items-center gap-2 overflow-x-auto pr-2">
-            {places.length === 0 ? (
-              <div className="text-sm text-gray-500">Nenhum lugar</div>
-            ) : (
-              places.map((p) => {
-                const isActive = hoveredPlaceId === p.id;
-                return (
-                  <div
-                    key={p.id}
-                    className="flex-shrink-0 px-3 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-default select-none"
-                    title={p.name}
-                    onMouseEnter={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: p.id } }))}
-                    onMouseLeave={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: null } }))}
-                    style={{ color: isActive ? p.color : undefined, border: isActive ? `1px solid ${p.color}33` : undefined }}
-                  >
-                    {p.name}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <button
-            onClick={handleOpenAddModal}
-            aria-label="Adicionar lugar"
-            className="ml-auto -mr-1 w-8 h-8 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
-          >
-            +
-          </button>
-        </div>
-
         <AddColumnForm onAdd={addColumn} />
       </div>
 
@@ -603,6 +576,43 @@ export function KanbanBoard() {
           </div>
         </div>
       )}
+
+      {/* Places bar */}
+      <div className="fixed left-0 bottom-5 w-screen flex items-center justify-center">
+
+        <div className="p-1 flex items-center gap-2 overflow-x-auto pr-2">
+
+          <button
+            onClick={handleOpenAddModal}
+            aria-label="Adicionar lugar"
+            className="w-8 h-8 p-3 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
+          >
+            +
+          </button>
+
+          {places.length === 0 ? (
+            <div className="text-sm text-gray-500">Nenhum lugar</div>
+          ) : (
+            places.map((p) => {
+              const isActive = hoveredPlaceId === p.id;
+              return (
+                <div
+                  key={p.id}
+                  className="flex-shrink-0 px-3 py-1 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-default select-none"
+                  title={p.name}
+                  onMouseEnter={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: p.id } }))}
+                  onMouseLeave={() => window.dispatchEvent(new CustomEvent("kanban:place-hover", { detail: { placeId: null } }))}
+                  style={{ color: isActive ? p.color : undefined, border: isActive ? `1px solid ${p.color}` : "1px solid" }}
+                  onClick={() => removePlace(p.id)}
+                >
+                  {p.name}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+      </div>
     </DndContext>
   );
 
