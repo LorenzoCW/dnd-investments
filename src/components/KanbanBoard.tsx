@@ -1,6 +1,6 @@
 // File: KanbanBoard.tsx
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { BoardColumn, BoardContainer, type Column } from "./BoardColumn";
@@ -13,8 +13,8 @@ import {
   useSensor,
   useSensors,
   KeyboardSensor,
-  Announcements,
-  UniqueIdentifier,
+  type Announcements,
+  type UniqueIdentifier,
   TouchSensor,
   MouseSensor,
 } from "@dnd-kit/core";
@@ -24,6 +24,7 @@ import { hasDraggableData } from "./utils";
 import { coordinateGetter } from "./multipleContainersKeyboardPreset";
 
 import * as db from "../lib/db";
+import { PiggyBank } from "lucide-react";
 
 export type ColumnId = Column["id"] | string;
 
@@ -86,9 +87,9 @@ export function KanbanBoard() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showPlacesModal, setShowPlacesModal] = useState(false);
+  const [placesModalInitialPlaceId, setPlacesModalInitialPlaceId] = useState<string | null>(null);
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
-  const [editingPlace, setEditingPlace] = useState<Place | null>(null);
 
   const PLACES_KEY = "kanban:places";
   const SELECTED_PLACES_KEY = "kanban:selected-places";
@@ -118,10 +119,8 @@ export function KanbanBoard() {
   function enterTestMode() {
     console.warn("Entering test mode: Firestore inaccessible. Data will not be saved.");
     setTestMode(true);
-    // initialize sensible defaults so the app remains usable
     setColumns(DEFAULT_COLUMNS);
     setTasks([]);
-    // Note: we intentionally do not persist anything to any backend
   }
 
   // local operations mirror the db.* API used in this component
@@ -155,14 +154,17 @@ export function KanbanBoard() {
       const tasksCopy = ts.slice();
       const idx = tasksCopy.findIndex((t) => t.id === taskId);
       const nowISO = dateISO ?? new Date().toISOString();
+
       if (idx === -1) {
         // just create a new task in target
         tasksCopy.push({ id: uid("task"), columnId: targetColumnId, content: round2(amount), dateISO: nowISO, isProjection: false });
         return tasksCopy;
       }
+
       const original = { ...tasksCopy[idx] };
       // subtract amount from original, remove if <= 0
       const remaining = round2(Number(original.content) - amount);
+
       if (remaining > 0) {
         tasksCopy[idx] = { ...original, content: remaining };
       } else {
@@ -193,6 +195,7 @@ export function KanbanBoard() {
   // subscribe to DB (or fall back to test-mode)
   useEffect(() => {
     let unsub: (() => void) | undefined;
+
     try {
       // try to subscribe using the external db implementation
       unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
@@ -207,7 +210,6 @@ export function KanbanBoard() {
         }));
         setTasks(mappedTasks);
       });
-
     } catch (err) {
       console.error("Failed to connect to Firestore, entering test mode:", err);
       enterTestMode();
@@ -383,7 +385,7 @@ export function KanbanBoard() {
     try {
       await db.editColumn(String(columnId), { meta: value });
     } catch (err) {
-      console.error('failed to update column meta, switching to test mode', err);
+      console.error("failed to update column meta, switching to test mode", err);
       enterTestMode();
       localUpdateColumnMeta(columnId, value);
       alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
@@ -404,6 +406,7 @@ export function KanbanBoard() {
   const announcements: Announcements = {
     onDragStart({ active }) {
       if (!hasDraggableData(active)) return;
+
       if (active.data.current?.type === "Column") {
         const startColumnIdx = columnsId.findIndex((id) => id === active.id);
         const startColumn = columns[startColumnIdx];
@@ -429,10 +432,11 @@ export function KanbanBoard() {
       }
     },
     onDragEnd({ active }) {
-      if (!hasDraggableData(active) || !hasDraggableData(active)) {
+      if (!hasDraggableData(active)) {
         pickedUpTaskColumn.current = null;
         return;
       }
+
       if (active.data.current?.type === "Column") {
         const overColumnPosition = columnsId.findIndex((id) => id === active.id);
         return `Column ${active.data.current.column.title} was dropped into position ${overColumnPosition + 1} of ${columnsId.length}`;
@@ -440,6 +444,7 @@ export function KanbanBoard() {
         const { tasksInColumn, taskPosition, column } = getDraggingTaskData(active.id, active.data.current.task.columnId);
         return `Task was dropped into position ${taskPosition + 1} of ${tasksInColumn.length} in column ${column?.title}`;
       }
+
       pickedUpTaskColumn.current = null;
     },
     onDragCancel({ active }) {
@@ -461,6 +466,7 @@ export function KanbanBoard() {
     } catch (e) {
       console.warn("Failed to load places", e);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -508,17 +514,34 @@ export function KanbanBoard() {
   }
 
   function togglePlaceSelection(id: string) {
-    setSelectedPlaceIds((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    );
+    setSelectedPlaceIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
 
-  function updatePlace(
-    id: string,
-    patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>
-  ) {
+  function createPlace(data: Omit<Place, "id">) {
+    const nextPlace: Place = {
+      id: uid("place"),
+      name: data.name,
+      color: data.color,
+      expectedValue: data.expectedValue ?? null,
+    };
+
+    savePlaces([...places, nextPlace]);
+    return nextPlace.id;
+  }
+
+  function updatePlace(id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) {
     const next = places.map((p) => (p.id === id ? { ...p, ...patch } : p));
     savePlaces(next);
+  }
+
+  function movePlace(id: string, direction: "up" | "down") {
+    const index = places.findIndex((p) => p.id === id);
+    if (index === -1) return;
+
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= places.length) return;
+
+    savePlaces(arrayMove(places, index, targetIndex));
   }
 
   function removePlace(id: string) {
@@ -527,26 +550,7 @@ export function KanbanBoard() {
     setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
     setSelectedPlaceIds((curr) => curr.filter((item) => item !== id));
     if (hoveredPlaceId === id) setHoveredPlaceId(null);
-    if (editingPlace?.id === id) setEditingPlace(null);
   }
-
-  // const activePlaceIds = hoveredPlaceId ?? selectedPlaceIds;
-
-  // const moneyFormatter = useMemo(
-  //   () =>
-  //     new Intl.NumberFormat("pt-BR", {
-  //       style: "currency",
-  //       currency: "BRL",
-  //       minimumFractionDigits: 2,
-  //       maximumFractionDigits: 2,
-  //     }),
-  //   []
-  // );
-
-  // function formatMoney(value?: number | null) {
-  //   if (value === undefined || value === null || Number.isNaN(value)) return "—";
-  //   return moneyFormatter.format(value);
-  // }
 
   const placeTotals = useMemo(() => {
     const totals = new Map<string, number>();
@@ -575,77 +579,14 @@ export function KanbanBoard() {
     }
   }
 
-  // useEffect(() => {
-  //   function onAddPlace(e: any) {
-  //     const name = e?.detail?.name;
-  //     const color = e?.detail?.color ?? "#06b6d4";
-  //     if (name) addPlace(name, color);
-  //   }
-  //   function onPlaceHover(e: any) {
-  //     const placeId = e?.detail?.placeId ?? null;
-  //     setHoveredPlaceId(placeId);
-  //   }
-
-  //   window.addEventListener("kanban:add-place", onAddPlace as EventListener);
-  //   window.addEventListener("kanban:place-hover", onPlaceHover as EventListener);
-
-  //   function onStorage(ev: StorageEvent) {
-  //     if (ev.key === PLACES_KEY) {
-  //       try {
-  //         if (ev.newValue) setPlaces(JSON.parse(ev.newValue));
-  //         else setPlaces([]);
-  //       } catch (e) {
-  //         console.warn("Failed to parse places from storage event", e);
-  //       }
-  //     }
-  //   }
-  //   window.addEventListener("storage", onStorage as any);
-
-  //   return () => {
-  //     window.removeEventListener("kanban:add-place", onAddPlace as EventListener);
-  //     window.removeEventListener("kanban:place-hover", onPlaceHover as EventListener);
-  //     window.removeEventListener("storage", onStorage as any);
-  //   };
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [places, testMode]);
-
-  function handleOpenAddModal() {
-    setShowAddModal(true);
+  function openPlacesManager(placeId: string | null = null) {
+    setPlacesModalInitialPlaceId(placeId);
+    setShowPlacesModal(true);
   }
 
-  function handleCreatePlace(name: string, color: string) {
-    const next = [...places, { id: uid("place"), name, color, expectedValue: null }];
-    savePlaces(next);
-    setShowAddModal(false);
-  }
-
-  {
-    editingPlace && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-        onClick={() => setEditingPlace(null)}
-      >
-        <div
-          className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-md border-2 border-slate-800 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h3 className="text-lg font-semibold mb-4">Editar lugar</h3>
-
-          <PlaceEditorForm
-            place={editingPlace}
-            onCancel={() => setEditingPlace(null)}
-            onSave={(patch) => {
-              updatePlace(editingPlace.id, patch);
-              setEditingPlace(null);
-            }}
-            onDelete={() => {
-              removePlace(editingPlace.id);
-              setEditingPlace(null);
-            }}
-          />
-        </div>
-      </div>
-    )
+  function handleClosePlacesManager() {
+    setShowPlacesModal(false);
+    setPlacesModalInitialPlaceId(null);
   }
 
   return (
@@ -678,6 +619,7 @@ export function KanbanBoard() {
                 const tb = b.dateISO ? new Date(b.dateISO).getTime() : 0;
                 return tb - ta;
               });
+
             return (
               <BoardColumn
                 key={col.id}
@@ -701,7 +643,7 @@ export function KanbanBoard() {
         </SortableContext>
       </BoardContainer>
 
-      {"document" in window &&
+      {typeof document !== "undefined" &&
         createPortal(
           <DragOverlay>
             {activeColumn && (
@@ -719,17 +661,16 @@ export function KanbanBoard() {
           document.body
         )}
 
-      {/* Add Place modal */}
-      {showAddModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-          onClick={() => setShowAddModal(false)}
-        >
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 w-11/12 max-w-md border-2 border-slate-800 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-3">Criar lugar</h3>
-            <AddPlaceForm onCancel={() => setShowAddModal(false)} onCreate={handleCreatePlace} />
-          </div>
-        </div>
+      {showPlacesModal && (
+        <PlacesManagerModal
+          places={places}
+          initialPlaceId={placesModalInitialPlaceId}
+          onClose={handleClosePlacesManager}
+          onCreate={(data) => createPlace(data)}
+          onUpdate={updatePlace}
+          onDelete={(id) => removePlace(id)}
+          onMove={movePlace}
+        />
       )}
 
       {/* Places bar */}
@@ -738,11 +679,11 @@ export function KanbanBoard() {
         <div className="p-1 flex items-center gap-2 overflow-x-auto pr-2">
 
           <button
-            onClick={handleOpenAddModal}
-            aria-label="Adicionar lugar"
+            onClick={() => openPlacesManager(null)}
+            aria-label="Gerenciar lugares"
             className="w-8 h-8 p-6 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
           >
-            +
+            <div><PiggyBank size={24} /></div>
           </button>
 
           {places.length === 0 ? (
@@ -755,7 +696,9 @@ export function KanbanBoard() {
                 total={placeTotals.get(p.id) ?? 0}
                 isActive={selectedPlaceIds.includes(p.id) || hoveredPlaceId === p.id}
                 onToggle={() => togglePlaceSelection(p.id)}
-                onEdit={() => setEditingPlace(p)}
+                onHoverStart={() => setHoveredPlaceId(p.id)}
+                onHoverEnd={() => setHoveredPlaceId((current) => (current === p.id ? null : current))}
+
               />
             ))
           )}
@@ -846,7 +789,7 @@ export function KanbanBoard() {
       try {
         await db.editTask(String(taskId), patch);
       } catch (e) {
-        console.error('failed to edit task column, switching to test mode', e);
+        console.error("failed to edit task column, switching to test mode", e);
         enterTestMode();
         localEditTask(String(taskId), { columnId: String(targetColumnId), dateISO: dateISO ?? undefined });
       }
@@ -856,11 +799,7 @@ export function KanbanBoard() {
     if (isActiveATask && isOverATask) {
       // if changing column, update task columnId
       if (overData.task.columnId !== activeData.task.columnId) {
-        updateTaskColumn(
-          activeId,
-          overData.task.columnId,
-          activeData.task.dateISO ?? new Date().toISOString()
-        );
+        updateTaskColumn(activeId, overData.task.columnId, activeData.task.dateISO ?? new Date().toISOString());
       }
     }
 
@@ -868,17 +807,14 @@ export function KanbanBoard() {
 
     // dropping a Task over a column
     if (isActiveATask && isOverAColumn) {
-      updateTaskColumn(
-        activeId,
-        overId,
-        activeData.task.dateISO ?? new Date().toISOString()
-      );
+      updateTaskColumn(activeId, overId, activeData.task.dateISO ?? new Date().toISOString());
     }
   }
 }
 
 function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
   const [value, setValue] = useState("");
+
   return (
     <form
       onSubmit={(e) => {
@@ -896,48 +832,13 @@ function AddColumnForm({ onAdd }: { onAdd: (title: string) => void }) {
         maxLength={18}
         onChange={(e) => setValue(e.target.value)}
       />
-      <button type="submit" className="text-xs lg:text-base px-3 py-1 rounded bg-sky-700 text-white hover:ring ring-sky-700 transition-all duration-300 cursor-pointer">
+      <button
+        type="submit"
+        className="text-xs lg:text-base px-3 py-1 rounded bg-sky-700 text-white hover:ring ring-sky-700 transition-all duration-300 cursor-pointer"
+      >
         Adicionar investimento
       </button>
     </form>
-  );
-}
-
-function AddPlaceForm({ onCancel, onCreate }: { onCancel: () => void; onCreate: (name: string, color: string) => void }) {
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("#06b6d4");
-
-  return (
-    <div>
-      <div className="space-y-3">
-        <div>
-          <label className="block text-sm">Nome</label>
-          <input className="w-full px-3 py-2 rounded border" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-
-        <div>
-          <label className="block text-sm">Cor</label>
-          <div className="flex items-center gap-3">
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-            <div className="text-sm text-gray-500">Escolha uma cor para identificar o lugar</div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-2 mt-4">
-          <button onClick={onCancel} className="px-3 py-2 rounded border">Cancelar</button>
-          <button
-            onClick={() => {
-              const trimmed = name.trim();
-              if (!trimmed) return alert("Informe um nome");
-              onCreate(trimmed, color);
-            }}
-            className="px-3 py-2 rounded bg-sky-700 text-white"
-          >
-            Criar
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -946,57 +847,30 @@ function PlaceChip({
   total,
   isActive,
   onToggle,
-  onEdit,
+  onHoverStart,
+  onHoverEnd,
+
 }: {
   place: Place;
   total: number;
   isActive: boolean;
   onToggle: () => void;
-  onEdit: () => void;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
+
 }) {
-  const pressTimerRef = useRef<number | null>(null);
-  const longPressedRef = useRef(false);
-
-  const clearTimer = () => {
-    if (pressTimerRef.current !== null) {
-      window.clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => clearTimer();
-  }, []);
-
   return (
     <button
       type="button"
       className="flex-shrink-0 px-3 py-2 rounded-full bg-slate-200 dark:bg-slate-700 text-sm font-medium cursor-pointer select-none min-w-[170px] text-left"
       title={place.name}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        longPressedRef.current = false;
-        clearTimer();
-        pressTimerRef.current = window.setTimeout(() => {
-          longPressedRef.current = true;
-          onEdit();
-        }, 2000);
-      }}
-      onPointerUp={clearTimer}
-      onPointerCancel={clearTimer}
-      onPointerLeave={clearTimer}
-      onClick={() => {
-        if (longPressedRef.current) {
-          longPressedRef.current = false;
-          return;
-        }
-        onToggle();
-      }}
+      onClick={onToggle}
+      onPointerEnter={onHoverStart}
+      onPointerLeave={onHoverEnd}
       onContextMenu={(e) => e.preventDefault()}
       style={{
         color: isActive ? place.color : undefined,
         border: isActive ? `1px solid ${place.color}` : "1px solid transparent",
-        boxShadow: isActive ? `0 0 0 6px ${place.color}22` : undefined,
         background: isActive ? `${place.color}18` : undefined,
       }}
     >
@@ -1005,7 +879,7 @@ function PlaceChip({
         <span className="text-[11px] opacity-80">
           Total: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(total)}
           {place.expectedValue !== undefined && place.expectedValue !== null
-            ? ` · Esperado: ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(place.expectedValue)}`
+            ? ` / ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(place.expectedValue)}`
             : ""}
         </span>
       </div>
@@ -1013,94 +887,275 @@ function PlaceChip({
   );
 }
 
-function PlaceEditorForm({
-  place,
-  onCancel,
-  onSave,
+function PlacesManagerModal({
+  places,
+  initialPlaceId,
+  onClose,
+  onCreate,
+  onUpdate,
   onDelete,
+  onMove,
 }: {
-  place: Place;
-  onCancel: () => void;
-  onSave: (patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => void;
-  onDelete: () => void;
+  places: Place[];
+  initialPlaceId: string | null;
+  onClose: () => void;
+  onCreate: (data: Omit<Place, "id">) => string;
+  onUpdate: (id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => void;
+  onDelete: (id: string) => void;
+  onMove: (id: string, direction: "up" | "down") => void;
 }) {
-  const [name, setName] = useState(place.name);
-  const [color, setColor] = useState(place.color);
-  const [expectedText, setExpectedText] = useState(
-    place.expectedValue !== undefined && place.expectedValue !== null ? place.expectedValue.toFixed(2) : ""
+  const [selectedId, setSelectedId] = useState<string | null>(initialPlaceId);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#06b6d4");
+  const [expectedText, setExpectedText] = useState("");
+
+  const selectedPlace = useMemo(
+    () => places.find((p) => p.id === selectedId) ?? null,
+    [places, selectedId]
   );
 
   useEffect(() => {
-    setName(place.name);
-    setColor(place.color);
-    setExpectedText(
-      place.expectedValue !== undefined && place.expectedValue !== null ? place.expectedValue.toFixed(2) : ""
-    );
-  }, [place]);
+    if (initialPlaceId && places.some((p) => p.id === initialPlaceId)) {
+      setSelectedId(initialPlaceId);
+      return;
+    }
+
+    setSelectedId(null);
+  }, [initialPlaceId, places]);
+
+  useEffect(() => {
+    if (selectedPlace) {
+      setName(selectedPlace.name);
+      setColor(selectedPlace.color);
+      setExpectedText(
+        selectedPlace.expectedValue !== undefined && selectedPlace.expectedValue !== null
+          ? selectedPlace.expectedValue.toFixed(2)
+          : ""
+      );
+    } else {
+      setName("");
+      setColor("#06b6d4");
+      setExpectedText("");
+    }
+  }, [selectedPlace]);
+
+  function clearFormForNewPlace() {
+    setSelectedId(null);
+    setName("");
+    setColor("#06b6d4");
+    setExpectedText("");
+  }
+
+  function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      alert("Informe um nome");
+      return;
+    }
+
+    let expectedValue: number | null = null;
+    if (expectedText.trim() !== "") {
+      try {
+        expectedValue = parseCurrencyInput(expectedText);
+      } catch (e: any) {
+        alert(e?.message ?? "Valor esperado inválido");
+        return;
+      }
+    }
+
+    if (selectedId) {
+      onUpdate(selectedId, {
+        name: trimmed,
+        color,
+        expectedValue,
+      });
+    } else {
+      const newId = onCreate({
+        name: trimmed,
+        color,
+        expectedValue,
+      });
+      setSelectedId(newId);
+    }
+  }
+
+  function handleDelete(id: string) {
+    const place = places.find((p) => p.id === id);
+    if (!place) return;
+
+    if (!window.confirm(`Excluir o lugar "${place.name}"?`)) return;
+
+    onDelete(id);
+
+    const idx = places.findIndex((p) => p.id === id);
+    const next = places[idx + 1] ?? places[idx - 1] ?? null;
+    setSelectedId(next?.id ?? null);
+  }
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-lg font-semibold">Editar lugar</h3>
-
-      <div>
-        <label className="block text-sm mb-1">Nome</label>
-        <input
-          className="w-full px-3 py-2 rounded border"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm mb-1">Cor</label>
-        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-      </div>
-
-      <div>
-        <label className="block text-sm mb-1">Valor esperado</label>
-        <input
-          className="w-full px-3 py-2 rounded border"
-          value={expectedText}
-          onChange={(e) => setExpectedText(e.target.value)}
-          placeholder="Ex: 1500,00"
-        />
-        <div className="text-xs text-gray-500 mt-1">Deixe vazio para remover o valor esperado.</div>
-      </div>
-
-      <div className="flex justify-between gap-2 pt-2">
-        <button
-          onClick={() => {
-            if (window.confirm(`Excluir o lugar "${place.name}"?`)) onDelete();
-          }}
-          className="px-3 py-2 rounded bg-rose-600 text-white"
-        >
-          Excluir
-        </button>
-
-        <div className="flex gap-2">
-          <button onClick={onCancel} className="px-3 py-2 rounded border">
-            Cancelar
-          </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={onClose}>
+      <div
+        className="w-full max-w-4xl rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h3 className="text-lg font-semibold">Gerenciar lugares</h3>
+            <p className="text-sm text-slate-500">Visualize, adicione, edite, exclua e reorganize os lugares.</p>
+          </div>
           <button
-            onClick={() => {
-              const trimmed = name.trim();
-              if (!trimmed) return alert("Informe um nome");
-
-              let expectedValue: number | null = null;
-              if (expectedText.trim() !== "") {
-                expectedValue = parseCurrencyInput(expectedText);
-              }
-
-              onSave({
-                name: trimmed,
-                color,
-                expectedValue,
-              });
-            }}
-            className="px-3 py-2 rounded bg-sky-700 text-white"
+            onClick={onClose}
+            className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
           >
-            Salvar
+            Fechar
           </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] gap-0">
+          <div className="p-5 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-semibold">Lista de lugares</h4>
+              <button
+                onClick={clearFormForNewPlace}
+                className="px-3 py-2 rounded-lg bg-sky-700 text-white hover:opacity-90"
+              >
+                Novo lugar
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
+              {places.length === 0 ? (
+                <div className="text-sm text-slate-500 p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-700">
+                  Nenhum lugar cadastrado.
+                </div>
+              ) : (
+                places.map((place, index) => {
+                  const isSelected = place.id === selectedId;
+                  return (
+                    <div
+                      key={place.id}
+                      className={[
+                        "rounded-xl border p-3 transition",
+                        isSelected
+                          ? "border-sky-500 bg-sky-50 dark:bg-sky-950/30"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <button
+                          onClick={() => setSelectedId(place.id)}
+                          className="text-left flex-1 min-w-0"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="inline-block w-3 h-3 rounded-full shrink-0"
+                              style={{ background: place.color }}
+                            />
+                            <span className="font-medium truncate">{place.name}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {place.expectedValue !== undefined && place.expectedValue !== null
+                              ? `Meta: ${new Intl.NumberFormat("pt-BR", {
+                                style: "currency",
+                                currency: "BRL",
+                              }).format(place.expectedValue)}`
+                              : "Sem meta"}
+                          </div>
+                        </button>
+
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <button
+                            onClick={() => onMove(place.id, "up")}
+                            disabled={index === 0}
+                            className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40"
+                            title="Mover para cima"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => onMove(place.id, "down")}
+                            disabled={index === places.length - 1}
+                            className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40"
+                            title="Mover para baixo"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <button
+                          onClick={() => setSelectedId(place.id)}
+                          className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(place.id)}
+                          className="px-3 py-2 rounded-lg bg-rose-600 text-white hover:opacity-90"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="p-5">
+            <h4 className="font-semibold mb-3">{selectedId ? "Editar " + selectedPlace?.name : "Criar novo lugar"}</h4>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm mb-1">Nome</label>
+                <input
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ex: Caixa, Reserva, Carteira..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Cor</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-12 h-10 p-0 border-0 bg-transparent"
+                  />
+                  <div className="text-sm text-slate-500">Escolha uma cor para identificar o lugar.</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Valor esperado</label>
+                <input
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent"
+                  value={expectedText}
+                  onChange={(e) => setExpectedText(e.target.value)}
+                  placeholder="Ex: 1500,00"
+                />
+                <div className="text-xs text-slate-500 mt-1">Deixe vazio para remover o valor esperado.</div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2">
+                <button
+                  onClick={onClose}
+                  className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Cancelar
+                </button>
+                <button onClick={handleSave} className="px-3 py-2 rounded-lg bg-sky-700 text-white hover:opacity-90">
+                  {selectedId ? "Atualizar" : "Salvar"}
+                </button>
+              </div>
+
+            </div>
+          </div>
         </div>
       </div>
     </div>

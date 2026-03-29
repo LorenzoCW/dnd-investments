@@ -1005,7 +1005,7 @@ export function BoardColumn({
 
   const combinedStyle = {
     ...style,
-    boxShadow: isThisPlaceActive ? `0 0 0 6px ${highlightColor}33` : undefined,
+    boxShadow: isThisPlaceActive ? `0 0 10px 0px ${highlightColor}99` : undefined,
   } as React.CSSProperties;
 
   return (
@@ -1029,7 +1029,7 @@ export function BoardColumn({
         <div className="flex items-center">
           <div className="ml-2 text-left">
             <div className="flex items-center gap-3">
-              <div style={{ color: isThisPlaceHovered ? highlightColor : undefined }}>{column.title}</div>
+              <div>{column.title}</div>
 
               {/* Select place */}
               <div>
