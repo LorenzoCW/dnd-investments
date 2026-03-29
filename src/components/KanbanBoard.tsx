@@ -91,9 +91,6 @@ export function KanbanBoard() {
   const [placesModalInitialPlaceId, setPlacesModalInitialPlaceId] = useState<string | null>(null);
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<string[]>([]);
 
-  const PLACES_KEY = "kanban:places";
-  const SELECTED_PLACES_KEY = "kanban:selected-places";
-
   const pickedUpTaskColumn = useRef<ColumnId | null>(null);
   const columnsId = useMemo(() => columns.map((col) => col.id), [columns]);
   const [activeColumn, setActiveColumn] = useState<Column | null>(null);
@@ -192,16 +189,31 @@ export function KanbanBoard() {
     setColumns((cols) => cols.map((c) => (c.id === String(id) ? { ...c, meta: meta ?? undefined } : c)));
   }
 
+  function normalizePlace(raw: any): Place {
+    return {
+      id: String(raw?.id ?? uid("place")),
+      name: String(raw?.name ?? ""),
+      color: String(raw?.color ?? "#06b6d4"),
+      expectedValue:
+        raw?.expectedValue === undefined || raw?.expectedValue === null || raw?.expectedValue === ""
+          ? null
+          : Number(raw.expectedValue) || null,
+    };
+  }
+
   // subscribe to DB (or fall back to test-mode)
   useEffect(() => {
     let unsub: (() => void) | undefined;
 
     try {
-      // try to subscribe using the external db implementation
-      unsub = db.subscribeAll(({ columns: cols, tasks: ts }) => {
+      unsub = db.subscribeAll((snapshot: any) => {
+        const cols = Array.isArray(snapshot?.columns) ? snapshot.columns : [];
+        const ts = Array.isArray(snapshot?.tasks) ? snapshot.tasks : [];
+        const pls = Array.isArray(snapshot?.places) ? snapshot.places : [];
+
         setColumns(cols as any);
 
-        const mappedTasks: Task[] = ts.map((t) => ({
+        const mappedTasks: Task[] = ts.map((t: any) => ({
           id: t.id,
           columnId: t.columnId,
           content: typeof t.content === "number" ? t.content : Number(t.content) || 0,
@@ -209,6 +221,7 @@ export function KanbanBoard() {
           isProjection: !!t.isProjection,
         }));
         setTasks(mappedTasks);
+        setPlaces(pls.map(normalizePlace).filter((p: Place) => p.name.trim()));
       });
     } catch (err) {
       console.error("Failed to connect to Firestore, entering test mode:", err);
@@ -454,70 +467,22 @@ export function KanbanBoard() {
     },
   };
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PLACES_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setPlaces(parsed.map(normalizePlace).filter((p) => p.name.trim()));
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to load places", e);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  async function savePlacesToDb(next: Place[]) {
+    const normalized = next.map(normalizePlace).filter((p) => p.name.trim());
+    setPlaces(normalized);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SELECTED_PLACES_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setSelectedPlaceIds(parsed.map(String));
-        }
-      }
-    } catch (e) {
-      console.warn("Failed to load selected places", e);
-    }
-  }, []);
+    if (testMode) return;
 
-  useEffect(() => {
     try {
-      localStorage.setItem(SELECTED_PLACES_KEY, JSON.stringify(selectedPlaceIds));
-    } catch (e) {
-      console.warn("Failed to save selected places", e);
-    }
-  }, [selectedPlaceIds]);
-
-  function normalizePlace(raw: any): Place {
-    return {
-      id: String(raw?.id ?? uid("place")),
-      name: String(raw?.name ?? ""),
-      color: String(raw?.color ?? "#06b6d4"),
-      expectedValue:
-        raw?.expectedValue === undefined || raw?.expectedValue === null || raw?.expectedValue === ""
-          ? null
-          : Number(raw.expectedValue) || null,
-    };
-  }
-
-  function savePlaces(next: Place[]) {
-    try {
-      const normalized = next.map(normalizePlace);
-      localStorage.setItem(PLACES_KEY, JSON.stringify(normalized));
-      setPlaces(normalized);
-    } catch (e) {
-      console.warn("Failed to save places", e);
+      await db.upsertPlaces?.(normalized);
+    } catch (err) {
+      console.error("Failed to persist places", err);
+      enterTestMode();
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
     }
   }
 
-  function togglePlaceSelection(id: string) {
-    setSelectedPlaceIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
-  }
-
-  function createPlace(data: Omit<Place, "id">) {
+  async function createPlace(data: Omit<Place, "id">) {
     const nextPlace: Place = {
       id: uid("place"),
       name: data.name,
@@ -525,31 +490,46 @@ export function KanbanBoard() {
       expectedValue: data.expectedValue ?? null,
     };
 
-    savePlaces([...places, nextPlace]);
+    const next = [...places, nextPlace];
+    await savePlacesToDb(next);
     return nextPlace.id;
   }
 
-  function updatePlace(id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) {
+  async function updatePlace(id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) {
     const next = places.map((p) => (p.id === id ? { ...p, ...patch } : p));
-    savePlaces(next);
+    await savePlacesToDb(next);
   }
 
-  function movePlace(id: string, direction: "up" | "down") {
+  async function movePlace(id: string, direction: "up" | "down") {
     const index = places.findIndex((p) => p.id === id);
     if (index === -1) return;
 
     const targetIndex = direction === "up" ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= places.length) return;
 
-    savePlaces(arrayMove(places, index, targetIndex));
+    const next = arrayMove(places, index, targetIndex);
+    await savePlacesToDb(next);
   }
 
-  function removePlace(id: string) {
+  async function removePlace(id: string) {
     const next = places.filter((p) => p.id !== id);
-    savePlaces(next);
+    await savePlacesToDb(next);
+
     setColumns((cols) => cols.map((c) => (String(c.placeId) === id ? { ...c, placeId: undefined } : c)));
     setSelectedPlaceIds((curr) => curr.filter((item) => item !== id));
     if (hoveredPlaceId === id) setHoveredPlaceId(null);
+
+    if (testMode) return;
+
+    try {
+      const affectedColumns = columns.filter((c) => String(c.placeId) === id);
+      await Promise.all(affectedColumns.map((c) => db.editColumn(String(c.id), { placeId: null })));
+      await db.removePlace?.(id);
+    } catch (err) {
+      console.error(err);
+      enterTestMode();
+      alert("Erro ao acessar Firestore. Entrando em modo de teste. Os dados não serão salvos permanentemente.");
+    }
   }
 
   const placeTotals = useMemo(() => {
@@ -666,9 +646,9 @@ export function KanbanBoard() {
           places={places}
           initialPlaceId={placesModalInitialPlaceId}
           onClose={handleClosePlacesManager}
-          onCreate={(data) => createPlace(data)}
+          onCreate={createPlace}
           onUpdate={updatePlace}
-          onDelete={(id) => removePlace(id)}
+          onDelete={removePlace}
           onMove={movePlace}
         />
       )}
@@ -695,7 +675,7 @@ export function KanbanBoard() {
                 place={p}
                 total={placeTotals.get(p.id) ?? 0}
                 isActive={selectedPlaceIds.includes(p.id) || hoveredPlaceId === p.id}
-                onToggle={() => togglePlaceSelection(p.id)}
+                onToggle={() => setSelectedPlaceIds((current) => (current.includes(p.id) ? current.filter((item) => item !== p.id) : [...current, p.id]))}
                 onHoverStart={() => setHoveredPlaceId(p.id)}
                 onHoverEnd={() => setHoveredPlaceId((current) => (current === p.id ? null : current))}
 
@@ -899,10 +879,10 @@ function PlacesManagerModal({
   places: Place[];
   initialPlaceId: string | null;
   onClose: () => void;
-  onCreate: (data: Omit<Place, "id">) => string;
-  onUpdate: (id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => void;
-  onDelete: (id: string) => void;
-  onMove: (id: string, direction: "up" | "down") => void;
+  onCreate: (data: Omit<Place, "id">) => Promise<string> | string;
+  onUpdate: (id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => Promise<void> | void;
+  onDelete: (id: string) => Promise<void> | void;
+  onMove: (id: string, direction: "up" | "down") => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(initialPlaceId);
   const [name, setName] = useState("");
@@ -946,7 +926,7 @@ function PlacesManagerModal({
     setExpectedText("");
   }
 
-  function handleSave() {
+  async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) {
       alert("Informe um nome");
@@ -964,32 +944,40 @@ function PlacesManagerModal({
     }
 
     if (selectedId) {
-      onUpdate(selectedId, {
-        name: trimmed,
-        color,
-        expectedValue,
-      });
+      await Promise.resolve(
+        onUpdate(selectedId, {
+          name: trimmed,
+          color,
+          expectedValue,
+        })
+      );
     } else {
-      const newId = onCreate({
-        name: trimmed,
-        color,
-        expectedValue,
-      });
+      const newId = await Promise.resolve(
+        onCreate({
+          name: trimmed,
+          color,
+          expectedValue,
+        })
+      );
       setSelectedId(newId);
     }
   }
 
-  function handleDelete(id: string) {
+  async function handleDelete(id: string) {
     const place = places.find((p) => p.id === id);
     if (!place) return;
 
     if (!window.confirm(`Excluir o lugar "${place.name}"?`)) return;
 
-    onDelete(id);
+    await Promise.resolve(onDelete(id));
 
     const idx = places.findIndex((p) => p.id === id);
     const next = places[idx + 1] ?? places[idx - 1] ?? null;
     setSelectedId(next?.id ?? null);
+  }
+
+  async function handleMove(id: string, direction: "up" | "down") {
+    await Promise.resolve(onMove(id, direction));
   }
 
   return (
@@ -1065,7 +1053,7 @@ function PlacesManagerModal({
 
                         <div className="flex flex-col gap-2 shrink-0">
                           <button
-                            onClick={() => onMove(place.id, "up")}
+                            onClick={() => handleMove(place.id, "up")}
                             disabled={index === 0}
                             className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40"
                             title="Mover para cima"
@@ -1073,7 +1061,7 @@ function PlacesManagerModal({
                             ↑
                           </button>
                           <button
-                            onClick={() => onMove(place.id, "down")}
+                            onClick={() => handleMove(place.id, "down")}
                             disabled={index === places.length - 1}
                             className="px-2 py-1 rounded border border-slate-300 dark:border-slate-700 disabled:opacity-40"
                             title="Mover para baixo"
