@@ -289,6 +289,30 @@ function EditCardForm({
           />
         </div>
 
+        <div className="flex gap-2 mt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setDateTimeLocal(
+                initialDateISO
+                  ? toLocalDateTimeInputValue(new Date(initialDateISO))
+                  : toLocalDateTimeInputValue()
+              );
+            }}
+            className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer text-sm"
+          >
+            Usar data original
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDateTimeLocal(toLocalDateTimeInputValue())}
+            className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer text-sm"
+          >
+            Usar data atual
+          </button>
+        </div>
+
         <div>
           <span className="text-sm">Tipo</span>
           <div className="flex items-center gap-3 bg-neutral-700 h-11 rounded-sm border p-4 text-white">
@@ -762,23 +786,41 @@ function TransferModal({
   onClose: () => void;
   onConfirm: (amount: number, targetColumnId: UniqueIdentifier, dateISO?: string | null) => void;
 }) {
-  const [amount, setAmount] = useState(Math.min(task.content, Math.floor(task.content)));
+  const maxAmount = useMemo(
+    () => (typeof task.content === "number" ? task.content : Number(task.content) || 0),
+    [task.content]
+  );
+
+  const [amount, setAmount] = useState<number>(maxAmount);
   const [targetColumnId, setTargetColumnId] = useState<UniqueIdentifier>(currentColumnId);
   const [dateTimeLocal, setDateTimeLocal] = useState(toLocalDateTimeInputValue());
 
   const amountInputRef = useRef<HTMLInputElement>(null);
 
+  const originalDateLocal = useMemo(() => {
+    return task.dateISO ? toLocalDateTimeInputValue(new Date(task.dateISO)) : toLocalDateTimeInputValue();
+  }, [task.dateISO]);
+
+  useEffect(() => {
+    setAmount(maxAmount);
+  }, [maxAmount]);
+
+  const clampAmount = (value: number) => {
+    if (!Number.isFinite(value)) return 0;
+    const rounded = Math.round(value * 100) / 100;
+    return Math.max(0, Math.min(maxAmount, rounded));
+  };
+
   useModalHotkeys({
     onCancel: onClose,
     onConfirm: () => {
-      if (amount <= 0) return alert("Informe um valor maior que zero");
-      if (amount > task.content) return alert("Valor maior do que o disponível");
+      const safeAmount = clampAmount(amount);
 
-      const dateISO = dateTimeLocal
-        ? new Date(dateTimeLocal).toISOString()
-        : null;
+      if (safeAmount <= 0) return alert("Informe um valor maior que zero");
+      if (safeAmount > maxAmount) return alert("Valor maior do que o disponível");
 
-      onConfirm(amount, targetColumnId, dateISO);
+      const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : null;
+      onConfirm(safeAmount, targetColumnId, dateISO);
     },
   });
 
@@ -792,13 +834,16 @@ function TransferModal({
         <h3 className="text-xl font-semibold mb-3">Transferir valor</h3>
 
         <div className="space-y-3">
-
           <div className="border border-slate-700 rounded-md text-sm flex justify-center gap-10 py-2">
             <span>
-              <span className="text-neutral-400">Lista atual:</span> <span className="font-semibold">{columns.find(c => c.id === currentColumnId)?.title}</span>
+              <span className="text-neutral-400">Lista atual:</span>{" "}
+              <span className="font-semibold">
+                {columns.find(c => c.id === currentColumnId)?.title}
+              </span>
             </span>
             <span>
-              <span className="text-neutral-400">Valor disponível:</span> <span className="font-semibold">R$ {task.content.toFixed(2)}</span>
+              <span className="text-neutral-400">Valor disponível:</span>{" "}
+              <span className="font-semibold">R$ {maxAmount.toFixed(2)}</span>
             </span>
           </div>
 
@@ -822,20 +867,24 @@ function TransferModal({
             <input
               ref={amountInputRef}
               type="number"
-              min={0.01}
+              min={0}
+              max={maxAmount}
               step={0.01}
               value={amount}
-              onChange={(e) => setAmount(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setAmount(clampAmount(Number.isFinite(next) ? next : 0));
+              }}
               className="w-full px-3 py-2 rounded border"
             />
 
             <input
               type="range"
               min={0}
-              max={task.content}
-              step={1}
+              max={maxAmount}
+              step={0.01}
               value={amount}
-              onChange={(e) => setAmount(Math.min(task.content, Number(e.target.value)))}
+              onChange={(e) => setAmount(clampAmount(Number(e.target.value)))}
               className="w-full mt-2"
             />
           </div>
@@ -849,6 +898,24 @@ function TransferModal({
               onChange={(e) => setDateTimeLocal(e.target.value)}
               className="w-full px-3 py-2 rounded border"
             />
+
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => setDateTimeLocal(originalDateLocal)}
+                className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer text-sm"
+              >
+                Usar data original
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDateTimeLocal(toLocalDateTimeInputValue())}
+                className="px-3 py-2 rounded border hover:ring ring-slate-800 transition-all duration-300 cursor-pointer text-sm"
+              >
+                Usar data atual
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-2 justify-end mt-4">
@@ -861,14 +928,13 @@ function TransferModal({
 
             <button
               onClick={() => {
-                if (amount <= 0) return alert("Informe um valor maior que zero");
-                if (amount > task.content) return alert("Valor maior do que o disponível");
+                const safeAmount = clampAmount(amount);
 
-                const dateISO = dateTimeLocal
-                  ? new Date(dateTimeLocal).toISOString()
-                  : null;
+                if (safeAmount <= 0) return alert("Informe um valor maior que zero");
+                if (safeAmount > maxAmount) return alert("Valor maior do que o disponível");
 
-                onConfirm(amount, targetColumnId, dateISO);
+                const dateISO = dateTimeLocal ? new Date(dateTimeLocal).toISOString() : null;
+                onConfirm(safeAmount, targetColumnId, dateISO);
               }}
               className="px-3 py-2 rounded bg-indigo-600 text-white hover:ring ring-indigo-600 transition-all duration-300 cursor-pointer"
             >
@@ -1220,7 +1286,7 @@ export function BoardColumn({
                         setTransferState({
                           open: true,
                           task,
-                          amount: Math.min(task.content, Math.floor(task.content)),
+                          amount: typeof task.content === "number" ? task.content : Number(task.content) || 0,
                           targetColumnId: column.id as UniqueIdentifier,
                           dateTimeLocal: toLocalDateTimeInputValue(new Date()),
                         });
