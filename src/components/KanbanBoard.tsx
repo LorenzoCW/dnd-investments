@@ -540,7 +540,7 @@ export function KanbanBoard() {
       if (!col.placeId) return;
 
       const totalForColumn = tasks
-        .filter((t) => t.columnId === col.id)
+        .filter((t) => t.columnId === col.id && !t.isProjection)
         .reduce((sum, t) => sum + (typeof t.content === "number" ? t.content : Number(t.content) || 0), 0);
 
       totals.set(col.placeId, (totals.get(col.placeId) ?? 0) + totalForColumn);

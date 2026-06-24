@@ -430,9 +430,15 @@ function DeleteModal({
 function ProjectionModal({
   onClose,
   onCreate,
+  currentBalance = 0,
 }: {
-  onClose: () => void;
-  onCreate: (value: number, startMonthISO: string | null, endMonthISO: string, dayNumber: number) => void;
+  onClose: () => void; currentBalance?: number; onCreate: (
+    value: number,
+    startMonthISO: string | null,
+    endMonthISO: string,
+    dayNumber: number,
+    useExistingBalance: boolean
+  ) => void;
 }) {
   const [valueText, setValueText] = useState("");
   const [useCustomStart, setUseCustomStart] = useState(false);
@@ -445,6 +451,7 @@ function ProjectionModal({
   const [endMonthNum, setEndMonthNum] = useState<string>(String(defaultMonthNum));
   const [endYear, setEndYear] = useState<string>(String(defaultYear));
   const [dayNum, setDayNum] = useState<string>("1");
+  const [useExistingBalance, setUseExistingBalance] = useState(false);
 
   const valueInputRef = useRef<HTMLInputElement>(null);
 
@@ -486,28 +493,67 @@ function ProjectionModal({
     }
   }
 
-  const previewAmounts = useMemo(() => {
+  const effectiveValue = useMemo(() => {
     try {
-      const v = parseCurrencyInput(valueText);
-      const startISO = useCustomStart ? buildISO(startMonthNum, startYear) : null;
-      const endISO = buildISO(endMonthNum, endYear);
-      return computePreview(v, startISO, endISO!);
-    } catch (e) {
+      const total = parseCurrencyInput(valueText);
+
+      return useExistingBalance
+        ? total - currentBalance
+        : total;
+    } catch {
       return null;
     }
-  }, [valueText, useCustomStart, startMonthNum, startYear, endMonthNum, endYear, dayNum]);
+  }, [valueText, useExistingBalance, currentBalance]);
+
+  const previewAmounts = useMemo(() => {
+    try {
+      if (effectiveValue === null || effectiveValue <= 0) {
+        return null;
+      }
+
+      const startISO = useCustomStart
+        ? buildISO(startMonthNum, startYear)
+        : null;
+
+      const endISO = buildISO(endMonthNum, endYear);
+
+      return computePreview(
+        effectiveValue,
+        startISO,
+        endISO!
+      );
+    } catch {
+      return null;
+    }
+  }, [
+    effectiveValue,
+    useCustomStart,
+    startMonthNum,
+    startYear,
+    endMonthNum,
+    endYear
+  ]);
 
   const handleCreate = () => {
     try {
       const v = parseCurrencyInput(valueText);
+      const adjustedValue = useExistingBalance ? (v - currentBalance) : v;
+
+      if (useExistingBalance && adjustedValue < 0) {
+        alert("O saldo atual já ultrapassa o valor total informado.");
+        return;
+      }
+
       const startISO = useCustomStart ? buildISO(startMonthNum, startYear) : null;
       const endISO = buildISO(endMonthNum, endYear);
       const day = Math.max(1, Math.min(31, Number(dayNum) || 1));
+
       if (!endISO) {
         alert("Escolha a data limite corretamente");
         return;
       }
-      onCreate(v, startISO ?? null, endISO, day);
+
+      onCreate(v, startISO ?? null, endISO, day, useExistingBalance);
     } catch (err: any) {
       alert(err?.message ?? "Valor inválido");
     }
@@ -549,6 +595,23 @@ function ProjectionModal({
               placeholder="Ex: 2000,00"
               className="w-full px-3 py-2 rounded border"
             />
+
+            <label className="inline-flex items-center gap-2 mt-2">
+              <input
+                type="checkbox"
+                checked={useExistingBalance}
+                onChange={(e) => setUseExistingBalance(e.target.checked)}
+              />
+              <span className="text-sm">
+                Usar valor já existente no investimento
+              </span>
+            </label>
+
+            {useExistingBalance && currentBalance > 0 && (
+              <div className="text-xs text-gray-500 mt-1">
+                Saldo atual da lista: {formatter.format(currentBalance)}
+              </div>
+            )}
           </div>
 
           <div>
@@ -582,17 +645,28 @@ function ProjectionModal({
             <div className="text-sm">Pré-visualização das parcelas</div>
 
             <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded h-52">
-              {previewAmounts && (
+              {effectiveValue !== null && effectiveValue <= 0 ? (
+                <div className="text-sm text-amber-600">
+                  O saldo atual já atingiu ou ultrapassou o valor informado.
+                </div>
+              ) : previewAmounts ? (
                 <div>
                   {(() => {
-                    const monthsCount = previewAmounts.length;
-                    const totalCents = (() => {
+                    const effectiveValue = (() => {
                       try {
-                        return Math.round(parseCurrencyInput(valueText) * 100);
-                      } catch (e) {
+                        const total = parseCurrencyInput(valueText);
+                        return useExistingBalance
+                          ? Math.max(0, total - currentBalance)
+                          : total;
+                      } catch {
                         return null;
                       }
                     })();
+                    const monthsCount = previewAmounts.length;
+                    const totalCents =
+                      effectiveValue !== null
+                        ? Math.round(effectiveValue * 100)
+                        : null;
 
                     if (monthsCount <= 0) return null;
 
@@ -615,10 +689,7 @@ function ProjectionModal({
                     const lastValue = previewAmounts[previewAmounts.length - 1];
                     const firstCount = previewAmounts.length - 1;
 
-                    // compute rounded-up equal installment and new total (ceil to cents)
-                    const valueNum = (() => {
-                      try { return parseCurrencyInput(valueText); } catch { return null; }
-                    })();
+                    const valueNum = effectiveValue;
 
                     let ceilInstallment = null as number | null;
                     let newTotal = null as number | null;
@@ -660,7 +731,7 @@ function ProjectionModal({
                     );
                   })()}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -960,7 +1031,13 @@ export function BoardColumn({
     return new Date(year, month, 0).getDate();
   }
 
-  function createProjections(totalValue: number, startMonthISO: string | null, endMonthISO: string, dayNumber: number) {
+  function createProjections(
+    totalValue: number,
+    startMonthISO: string | null,
+    endMonthISO: string,
+    dayNumber: number,
+    useExistingBalance: boolean = false
+  ) {
     const now = new Date();
     const startParts = (startMonthISO ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`).split('-');
     const endParts = endMonthISO.split('-');
@@ -976,11 +1053,21 @@ export function BoardColumn({
       return;
     }
 
-    const base = Math.floor((totalValue / monthsCount) * 100) / 100;
+    const remainingValue = useExistingBalance ? (totalValue - sumBalance) : totalValue;
+
+    if (useExistingBalance && remainingValue <= 0) {
+      alert('O saldo atual já cobre ou ultrapassa o valor total informado.');
+      return;
+    }
+
+    const base = Math.floor((remainingValue / monthsCount) * 100) / 100;
     const projections: { amount: number; dateISO: string }[] = [];
 
     for (let i = 0; i < monthsCount; i++) {
-      const amt = i < monthsCount - 1 ? base : Math.round((totalValue - base * (monthsCount - 1)) * 100) / 100;
+      const amt = i < monthsCount - 1
+        ? base
+        : Math.round((remainingValue - base * (monthsCount - 1)) * 100) / 100;
+
       const year = startYear + Math.floor((startMonth - 1 + i) / 12);
       const month = ((startMonth - 1 + i) % 12) + 1;
       // clamp day to last day of that month
@@ -1199,9 +1286,10 @@ export function BoardColumn({
 
       {isProjectionOpen && (
         <ProjectionModal
+          currentBalance={sumBalance}
           onClose={() => setIsProjectionOpen(false)}
-          onCreate={(value, startMonthISO, endMonthISO, dayNumber) => {
-            createProjections(value, startMonthISO, endMonthISO, dayNumber);
+          onCreate={(value, startMonthISO, endMonthISO, dayNumber, useExistingBalance) => {
+            createProjections(value, startMonthISO, endMonthISO, dayNumber, useExistingBalance);
             setIsProjectionOpen(false);
           }}
         />
