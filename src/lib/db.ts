@@ -30,6 +30,7 @@ export type Place = {
   name: string;
   color: string;
   expectedValue?: number | null;
+  dateTimeISO?: string | null;
 };
 
 function genId(prefix: string) {
@@ -59,6 +60,12 @@ function normalizePlace(raw: any): Place {
         raw?.expectedValue === ""
         ? null
         : Number(raw.expectedValue) || null,
+    dateTimeISO:
+      raw?.dateTimeISO === undefined ||
+        raw?.dateTimeISO === null ||
+        raw?.dateTimeISO === ""
+        ? null
+        : String(raw.dateTimeISO),
   };
 }
 
@@ -272,8 +279,8 @@ export async function addPlace(place: Omit<Place, "id"> & { id?: string }) {
     id,
     name: place.name,
     color: place.color,
-    expectedValue:
-      place.expectedValue === undefined ? null : place.expectedValue,
+    expectedValue: place.expectedValue === undefined ? null : place.expectedValue,
+    dateTimeISO: place.dateTimeISO === undefined ? null : place.dateTimeISO,
   });
 
   const orderSnap = await get(ref(db, "placesOrder"));
@@ -289,7 +296,7 @@ export async function addPlace(place: Omit<Place, "id"> & { id?: string }) {
 
 export async function editPlace(
   id: string,
-  payload: Partial<{ name: string; color: string; expectedValue: number | null }>
+  payload: Partial<{ name: string; color: string; expectedValue: number | null; dateTimeISO: string | null }>
 ) {
   await update(ref(db, `places/${id}`), payload as any);
 }
@@ -320,8 +327,8 @@ export async function upsertPlaces(places: Place[]) {
       id: place.id,
       name: place.name,
       color: place.color,
-      expectedValue:
-        place.expectedValue === undefined ? null : place.expectedValue,
+      expectedValue: place.expectedValue === undefined ? null : place.expectedValue,
+      dateTimeISO: place.dateTimeISO === undefined ? null : place.dateTimeISO,
     };
   });
 

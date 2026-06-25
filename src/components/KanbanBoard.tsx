@@ -33,6 +33,7 @@ type Place = {
   name: string;
   color: string;
   expectedValue?: number | null;
+  dateTimeISO?: string | null;
 };
 
 const DEFAULT_COLUMNS: Column[] = [
@@ -79,6 +80,33 @@ function parseCurrencyInput(input: string): number {
   const n = Math.round(Number(finalStr) * 100) / 100;
   if (Number.isNaN(n)) throw new Error("Número inválido");
   return n;
+}
+
+function toDateTimeLocalInputValue(iso?: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalInputValue(value: string): string | null {
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
+function formatDateTime(iso?: string | null): string {
+  if (!iso) return "Sem data/hora";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Data inválida";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 export function KanbanBoard() {
@@ -174,7 +202,19 @@ export function KanbanBoard() {
   }
 
   function localEditTask(taskId: string, patch: Partial<{ content: number; dateISO: string | null; columnId: string; isProjection: boolean }>) {
-    setTasks((ts) => ts.map((t) => (t.id === taskId ? { ...t, ...(patch.content !== undefined ? { content: round2(patch.content) } : {}), ...(patch.dateISO !== undefined ? { dateISO: patch.dateISO ?? undefined } : {}), ...(patch.columnId ? { columnId: patch.columnId } : {}), ...(patch.isProjection !== undefined ? { isProjection: !!patch.isProjection } : {}) } : t)));
+    setTasks((ts) =>
+      ts.map((t) =>
+        t.id === taskId
+          ? {
+            ...t,
+            ...(patch.content !== undefined ? { content: round2(patch.content) } : {}),
+            ...(patch.dateISO !== undefined ? { dateISO: patch.dateISO ?? undefined } : {}),
+            ...(patch.columnId ? { columnId: patch.columnId } : {}),
+            ...(patch.isProjection !== undefined ? { isProjection: !!patch.isProjection } : {}),
+          }
+          : t
+      )
+    );
   }
 
   function localUpdateColumnsOrder(newOrder: UniqueIdentifier[]) {
@@ -198,6 +238,10 @@ export function KanbanBoard() {
         raw?.expectedValue === undefined || raw?.expectedValue === null || raw?.expectedValue === ""
           ? null
           : Number(raw.expectedValue) || null,
+      dateTimeISO:
+        raw?.dateTimeISO === undefined || raw?.dateTimeISO === null || raw?.dateTimeISO === ""
+          ? null
+          : String(raw.dateTimeISO),
     };
   }
 
@@ -488,6 +532,7 @@ export function KanbanBoard() {
       name: data.name,
       color: data.color,
       expectedValue: data.expectedValue ?? null,
+      dateTimeISO: data.dateTimeISO ?? null,
     };
 
     const next = [...places, nextPlace];
@@ -495,7 +540,7 @@ export function KanbanBoard() {
     return nextPlace.id;
   }
 
-  async function updatePlace(id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) {
+  async function updatePlace(id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue" | "dateTimeISO">>) {
     const next = places.map((p) => (p.id === id ? { ...p, ...patch } : p));
     await savePlacesToDb(next);
   }
@@ -655,15 +700,15 @@ export function KanbanBoard() {
 
       {/* Places bar */}
       <div className="fixed left-0 bottom-5 w-screen flex items-center justify-center">
-
         <div className="p-1 flex items-center gap-2 overflow-x-auto pr-2">
-
           <button
             onClick={() => openPlacesManager(null)}
             aria-label="Gerenciar lugares"
             className="w-8 h-8 p-6 flex items-center justify-center rounded-full bg-sky-700 text-white hover:opacity-90 transition"
           >
-            <div><PiggyBank size={24} /></div>
+            <div>
+              <PiggyBank size={24} />
+            </div>
           </button>
 
           {places.length === 0 ? (
@@ -678,12 +723,10 @@ export function KanbanBoard() {
                 onToggle={() => setSelectedPlaceIds((current) => (current.includes(p.id) ? current.filter((item) => item !== p.id) : [...current, p.id]))}
                 onHoverStart={() => setHoveredPlaceId(p.id)}
                 onHoverEnd={() => setHoveredPlaceId((current) => (current === p.id ? null : current))}
-
               />
             ))
           )}
         </div>
-
       </div>
     </DndContext>
   );
@@ -829,7 +872,6 @@ function PlaceChip({
   onToggle,
   onHoverStart,
   onHoverEnd,
-
 }: {
   place: Place;
   total: number;
@@ -837,7 +879,6 @@ function PlaceChip({
   onToggle: () => void;
   onHoverStart: () => void;
   onHoverEnd: () => void;
-
 }) {
   return (
     <button
@@ -880,7 +921,7 @@ function PlacesManagerModal({
   initialPlaceId: string | null;
   onClose: () => void;
   onCreate: (data: Omit<Place, "id">) => Promise<string> | string;
-  onUpdate: (id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue">>) => Promise<void> | void;
+  onUpdate: (id: string, patch: Partial<Pick<Place, "name" | "color" | "expectedValue" | "dateTimeISO">>) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
   onMove: (id: string, direction: "up" | "down") => Promise<void> | void;
 }) {
@@ -888,6 +929,7 @@ function PlacesManagerModal({
   const [name, setName] = useState("");
   const [color, setColor] = useState("#06b6d4");
   const [expectedText, setExpectedText] = useState("");
+  const [dateTimeLocal, setDateTimeLocal] = useState("");
 
   const selectedPlace = useMemo(
     () => places.find((p) => p.id === selectedId) ?? null,
@@ -912,10 +954,12 @@ function PlacesManagerModal({
           ? selectedPlace.expectedValue.toFixed(2)
           : ""
       );
+      setDateTimeLocal(toDateTimeLocalInputValue(selectedPlace.dateTimeISO));
     } else {
       setName("");
       setColor("#06b6d4");
       setExpectedText("");
+      setDateTimeLocal("");
     }
   }, [selectedPlace]);
 
@@ -924,6 +968,7 @@ function PlacesManagerModal({
     setName("");
     setColor("#06b6d4");
     setExpectedText("");
+    setDateTimeLocal("");
   }
 
   async function handleSave() {
@@ -943,12 +988,15 @@ function PlacesManagerModal({
       }
     }
 
+    const dateTimeISO = fromDateTimeLocalInputValue(dateTimeLocal);
+
     if (selectedId) {
       await Promise.resolve(
         onUpdate(selectedId, {
           name: trimmed,
           color,
           expectedValue,
+          dateTimeISO,
         })
       );
     } else {
@@ -957,6 +1005,7 @@ function PlacesManagerModal({
           name: trimmed,
           color,
           expectedValue,
+          dateTimeISO,
         })
       );
       setSelectedId(newId);
@@ -1049,6 +1098,9 @@ function PlacesManagerModal({
                               }).format(place.expectedValue)}`
                               : "Sem meta"}
                           </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            {place.dateTimeISO ? `Data/hora: ${formatDateTime(place.dateTimeISO)}` : ""}
+                          </div>
                         </button>
 
                         <div className="flex flex-col gap-2 shrink-0">
@@ -1113,9 +1165,8 @@ function PlacesManagerModal({
                     type="color"
                     value={color}
                     onChange={(e) => setColor(e.target.value)}
-                    className="w-12 h-10 p-0 border-0 bg-transparent"
+                    className="w-full h-10 p-0 border-0 bg-transparent"
                   />
-                  <div className="text-sm text-slate-500">Escolha uma cor para identificar o lugar.</div>
                 </div>
               </div>
 
@@ -1127,7 +1178,16 @@ function PlacesManagerModal({
                   onChange={(e) => setExpectedText(e.target.value)}
                   placeholder="Ex: 1500,00"
                 />
-                <div className="text-xs text-slate-500 mt-1">Deixe vazio para remover o valor esperado.</div>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Data e hora</label>
+                <input
+                  type="datetime-local"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent"
+                  value={dateTimeLocal}
+                  onChange={(e) => setDateTimeLocal(e.target.value)}
+                />
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-2">
@@ -1141,7 +1201,6 @@ function PlacesManagerModal({
                   {selectedId ? "Atualizar" : "Salvar"}
                 </button>
               </div>
-
             </div>
           </div>
         </div>
